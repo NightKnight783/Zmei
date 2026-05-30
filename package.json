@@ -1,0 +1,25 @@
+{
+  "name": "zmei",
+  "version": "1.0.0",
+  "description": "Bot de l'association ANTRE",
+  "main": "main.js",
+  "scripts": {
+    "dev": "nodemon main.js",
+    "start": "node main.js",
+    "deploy": "node deploy-commands.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "init": "node init.js"
+  },
+  "author": "NightKnight",
+  "license": "ISC",
+  "dependencies": {
+    "@dice-roller/rpg-dice-roller": "^5.5.1",
+    "discord.js": "^14.26.4",
+    "nodemon": "^3.1.14",
+    "sqlite3": "^6.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1"
+  }
+}
