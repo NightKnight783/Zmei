@@ -1,6 +1,7 @@
 const { EmbedBuilder, Colors, Events } = require('discord.js')
 const { Database } = require('sqlite3')
 const { getRandomInt } = require('../utils/utils')
+const { clientId } = require('../config.json')
 
 const cooldown = 15 * 1000 // 15s
 
@@ -12,6 +13,11 @@ module.exports = {
 
     const db = new Database('Database.sqlite')
 
+    if (message.content?.includes(`<@${clientId}>`)) {
+      // Handle the bot mention
+      message.react('🐾')
+    }
+
     db.serialize(() => {
       db.get('SELECT * FROM data WHERE userId = ?', [message.author.id], async (error, value) => {
         if (error) {
@@ -19,7 +25,10 @@ module.exports = {
           return
         }
 
-        if (value) {
+        if (!value) {
+          // Create user in Database if not exist
+          db.run('INSERT into data (userId, userName, xpCooldown) values (?, ?, ?)', [message.author.id, message.author.displayName, Date.now()])
+        } else {
           // Si le dernier message envoyé date de moins de 15s on ignore
           if (Date.now() - (new Date(value.xpCooldown)).getTime() < cooldown) return
 

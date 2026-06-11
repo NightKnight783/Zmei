@@ -1,9 +1,20 @@
 const fs = require('fs')
 const path = require('path')
-const { Client, Collection, GatewayIntentBits } = require('discord.js')
+const { Client, Collection, GatewayIntentBits, Partials, Options } = require('discord.js')
 const { token } = require('./config.json')
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildMembers] })
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates],
+  partials: [
+    Partials.Message,
+    Partials.Channel],
+  makeCache: Options.cacheWithLimits({...Options.DefaultMakeCacheSettings, MessageManager: 500}), })
 
 client.commands = new Collection()
 

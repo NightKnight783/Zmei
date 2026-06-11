@@ -1,8 +1,8 @@
 const { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField, EmbedBuilder, Colors } = require('discord.js');
 const { Database } = require('sqlite3');
 const { testStaff } = require('../utils/utils');
+const { logChannel } = require('../utils/constants.js');
 
-const logs = "1249462029476167842"
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -53,6 +53,17 @@ module.exports = {
 
     if (testStaff(userToKick, interaction)) { return }
 
+      const mpEmbed = new EmbedBuilder()
+      .setColor(Colors.Red)
+      .setAuthor(author)
+      .setTitle(`Vous avez été kick du serveur ${server.name}`)
+      .setDescription(`Raison: [${reason}]`)
+
+    try {
+      await memberToKick.send({ embeds: [mpEmbed] })
+    } catch (error) {
+    }
+
     await memberToKick.kick( reason )
 
     const Sanct = {
@@ -92,8 +103,10 @@ module.exports = {
             embeds: [embed]
           })
 
-        const channel = server.channels.cache.get(logs)
-        await channel.send({ embeds: [logEmbed]})
+        const channel = server.channels.cache.get(logChannel)
+        if (channel) {
+          await channel.send({ embeds: [logEmbed]})
+        }
 
         db.close()
       })

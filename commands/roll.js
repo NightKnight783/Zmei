@@ -4,7 +4,7 @@ const crypto = require('crypto');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('roll')
-    .setDescription('Lance des dés (gère ! en explosion, i avec implosion, kh et kl pour garder les meilleurs/pires résultats)')
+    .setDescription('Lance des dés (gère ! en explosion, i avec implosion, kh et kl pour avantage/désavantage).')
     .addStringOption(option =>
         option.setName('formule')
             .setDescription('Ex:2d20, 1d10!, 4d6!+2, 2d20kl1, 4d4!kh1, 1d10i, 2d10!i, 4d6ikh3')

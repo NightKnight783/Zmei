@@ -1,8 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField, EmbedBuilder, Colors } = require('discord.js');
 const { Database } = require('sqlite3');
 const { testStaff } = require('../utils/utils');
-
-const logs = "1249462029476167842"
+const { logChannel } = require('../utils/constants.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -51,6 +50,17 @@ module.exports = {
 
     if (testStaff(memberToBan, interaction)) { return }
 
+    const mpEmbed = new EmbedBuilder()
+      .setColor(Colors.Red)
+      .setAuthor(author)
+      .setTitle(`Vous avez été banni du serveur ${server.name}`)
+      .setDescription(`Raison: [${reason}]`)
+
+    try {
+      await memberToBan.send({ embeds: [mpEmbed] })
+    } catch (error) {
+    }
+
     await server.bans.create(memberToBan.id, { reason })
 
     const Sanct = {
@@ -90,8 +100,10 @@ module.exports = {
             embeds: [embed]
           })
 
-        const channel = server.channels.cache.get(logs)
-        await channel.send({ embeds: [logEmbed]})
+        const channel = server.channels.cache.get(logChannel)
+        if (channel) {
+          await channel.send({ embeds: [logEmbed]})
+        }
 
         db.close()
       })
