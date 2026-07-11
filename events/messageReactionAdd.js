@@ -13,9 +13,9 @@ module.exports = {
     const guild = reaction.message.guild;
     const member = guild.members.cache.get(user.id)
 
-    if (reaction.emoji.name === '🐾') {
+    /*if (reaction.emoji.name === '🐾') {
       reaction.message.react('🐾')
-    }
+    }*/
 
     /*switch (reaction.message.id) {
       case reglementMessage: {
