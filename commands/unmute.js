@@ -1,42 +1,23 @@
 const { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField, EmbedBuilder, Colors } = require('discord.js')
-const { testStaff, getEmbedAuthor } = require('../utils/utils')
+const { getEmbedAuthor } = require('../utils/utils')
 const { getGuildConfig } = require('../utils/constants.js')
 const { addSanction } = require('../utils/sanctions')
 
-const MAX_TIMEOUT_MS = 28 * 24 * 60 * 60 * 1000 // Discord n'autorise pas plus de 28 jours
-
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('mute')
-    .setDescription('Mute quelqu\'un.')
+    .setName('unmute')
+    .setDescription('Retire le mute (timeout) d\'un membre.')
     .addUserOption(option =>
       option
         .setName('membre')
-        .setDescription('Le membre a mute')
+        .setDescription('Le membre à démute')
         .setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.MuteMembers)
     .addStringOption(option =>
       option
         .setName('raison')
         .setRequired(false)
-        .setDescription('La raison du mute')
-    )
-    .addIntegerOption(option =>
-      option
-        .setName('duree')
-        .setRequired(false)
-        .setDescription('La durée du mute')
-    )
-    .addStringOption(option =>
-      option
-        .setName('temps')
-        .setRequired(false)
-        .setDescription('L\'unitée de temps du mute')
-        .addChoices(
-          { name: 'Minutes', value: 'minute' },
-          { name: 'Heures', value: 'heure' },
-          { name: 'Jours', value: 'jour' }
-        )
+        .setDescription('La raison du démute')
     ),
   async execute (interaction) {
     const author = getEmbedAuthor(interaction.user)
@@ -54,67 +35,55 @@ module.exports = {
       return
     }
 
-    const userToMute = interaction.options.getUser('membre')
+    const userToUnmute = interaction.options.getUser('membre')
     const reason = interaction.options.getString('raison') || 'Aucune raison donnée'
 
-    const time = interaction.options.getInteger('duree') ?? 1
-    let unite = interaction.options.getString('temps') || 'minute'
-
-    if (testStaff(userToMute, interaction)) { return }
-
-    if (time < 1) {
+    const memberToUnmute = await server.members.fetch(userToUnmute.id).catch(() => null)
+    if (!memberToUnmute) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)
-        .setTitle('Le temps donnée est invalide, il doit être supérieure ou égale a 1.')
+        .setTitle(`Le membre ${userToUnmute.displayName} n'est plus sur le serveur.`)
 
       await interaction.reply({ embeds: [embed], ephemeral: true })
       return
     }
 
-    const unitSeconds = unite === 'minute' ? 60 : unite === 'heure' ? 60 * 60 : 24 * 60 * 60
-    const timeStamp = time * 1000 * unitSeconds
-
-    if (timeStamp > MAX_TIMEOUT_MS) {
+    if (!memberToUnmute.isCommunicationDisabled()) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)
-        .setTitle('La durée du mute ne peut pas dépasser 28 jours (limite de Discord).')
+        .setTitle(`Le membre ${userToUnmute.displayName} n'est pas mute.`)
 
       await interaction.reply({ embeds: [embed], ephemeral: true })
       return
     }
 
-    const memberToMute = server.members.cache.get(userToMute.id)
+    await memberToUnmute.timeout(null, reason)
 
     const mpEmbed = new EmbedBuilder()
-      .setColor(Colors.Red)
+      .setColor(Colors.Green)
       .setAuthor(author)
-      .setTitle(`Vous avez été mute du serveur ${server.name} pendant \`${time} ${unite}\``)
+      .setTitle(`Vous n'êtes plus mute sur le serveur ${server.name}`)
       .setDescription(`Raison: [${reason}]`)
 
     try {
-      await memberToMute.send({ embeds: [mpEmbed] })
+      await userToUnmute.send({ embeds: [mpEmbed] })
     } catch (error) {
       // L'utilisateur a ses MPs fermés, on ignore
     }
 
-    await memberToMute.timeout(timeStamp, reason)
-
-    if (time > 1) unite += 's'
-
-    await addSanction(userToMute.id, userToMute.displayName, {
-      type: 'Mute',
+    await addSanction(userToUnmute.id, userToUnmute.displayName, {
+      type: 'Unmute',
       date: Date.now(),
       moderator: interaction.user.id,
-      reason,
-      time: `${time} ${unite}`
+      reason
     })
 
     const embed = new EmbedBuilder()
-      .setColor(Colors.Grey)
+      .setColor(Colors.Green)
       .setAuthor(author)
-      .setTitle(`Le membre ${userToMute.displayName} a bien été mute pendant \`${time} ${unite}\`!`)
+      .setTitle(`Le membre ${userToUnmute.displayName} a bien été démute!`)
       .setDescription(`Raison: [${reason}]`)
 
     await interaction.reply({ embeds: [embed] })
@@ -123,10 +92,10 @@ module.exports = {
     const channel = server.channels.cache.get(logChannel)
     if (channel) {
       const logEmbed = new EmbedBuilder()
-        .setColor(Colors.Grey)
+        .setColor(Colors.Green)
         .setAuthor(author)
-        .setTitle(`Le membre ${userToMute.displayName} a été mute par ${interaction.user.displayName}`)
-        .setDescription(`Durée: \`${time} ${unite}\`\nRaison: [${reason}]`)
+        .setTitle(`Le membre ${userToUnmute.displayName} a été démute par ${interaction.user.displayName}`)
+        .setDescription(`Raison: [${reason}]`)
 
       await channel.send({ embeds: [logEmbed] })
     }

@@ -1,6 +1,5 @@
 const { EmbedBuilder, Colors, Events } = require('discord.js')
-const { logChannel } = require('../utils/constants.js');
-
+const { getGuildConfig } = require('../utils/constants.js');
 module.exports = {
     name: Events.MessageUpdate,
     once: false,
@@ -10,7 +9,8 @@ module.exports = {
 
         if (oldMessage.content === newMessage.content) return;
 
-        const channel = oldMessage.client.channels.cache.get(logChannel);
+        const { logChannel } = getGuildConfig(oldMessage.guild.id);
+        const channel = oldMessage.guild.channels.cache.get(logChannel);
         if (!channel) return console.log("[Logs] Salon de logs introuvable pour les messages édités.");
 
         const embed = new EmbedBuilder()

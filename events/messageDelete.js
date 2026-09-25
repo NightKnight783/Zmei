@@ -1,65 +1,66 @@
-const { EmbedBuilder, Colors, Events } = require('discord.js')
-const { logChannel } = require('../utils/constants.js');
+const { EmbedBuilder, Colors, Events, AttachmentBuilder } = require('discord.js')
+const { getGuildConfig } = require('../utils/constants.js')
+const { getCachedAttachments } = require('../utils/attachmentCache')
 
 module.exports = {
   name: Events.MessageDelete,
-    once: false,
-    async execute (message) {
-        if (message.partial) return; 
-        if (message.author?.bot) return; 
+  once: false,
+  async execute (message) {
+    if (message.partial) return
+    if (message.author?.bot) return
 
-        const logEmbed = new EmbedBuilder()
-            .setTitle(':x:  Message Supprimé')
-            .setColor(Colors.Red)
-            .setAuthor({ 
-                name: message.author.tag, 
-                iconURL: message.author.displayAvatarURL({ dynamic: true }) 
-            })
-            .setDescription(`Dans le salon ${message.channel}`)
-            .addFields(
-                { name: 'Message :', value: message.content || '*Vide ou média*' },
-            )
-            .setTimestamp()
-            .setFooter({ text: `ID du Message : ${message.id}` });
+    const { logChannel } = getGuildConfig(message.guild.id)
+    const channel = message.guild.channels.cache.get(logChannel)
+    if (!channel) return console.log('[Logs] Salon de logs introuvable pour les messages supprimés.')
 
-        const channel = message.guild.channels.cache.get(logChannel)
+    const logEmbed = new EmbedBuilder()
+      .setTitle(':x:  Message Supprimé')
+      .setColor(Colors.Red)
+      .setAuthor({
+        name: message.author.tag,
+        iconURL: message.author.displayAvatarURL({ dynamic: true })
+      })
+      .setDescription(`Dans le salon ${message.channel}`)
+      .addFields(
+        { name: 'Message :', value: message.content || '*Vide ou média*' }
+      )
+      .setTimestamp()
+      .setFooter({ text: `ID du Message : ${message.id}` })
 
-        const filesToSend = [];
+    const filesToSend = []
 
-            // On vérifie si le message contenait des pièces jointes (images, fichiers...)
-            if (message.attachments.size > 0) {
-                for (const [id, attachment] of message.attachments) {
-                    // On vérifie s'il s'agit bien d'une image
-                    if (attachment.contentType?.startsWith('image/')) {
-                        try {
-                            // On tente de télécharger l'image immédiatement avant que Discord ne la supprime
-                            const response = await fetch(attachment.url);
-                            
-                            if (response.ok) {
-                                const arrayBuffer = await response.arrayBuffer();
-                                const buffer = Buffer.from(arrayBuffer);
-                                
-                                // On recrée un fichier propre à envoyer
-                                const file = new AttachmentBuilder(buffer, { name: attachment.name });
-                                filesToSend.push(file);
-                            }
-                        } catch (error) {
-                            console.error("[Logs] Erreur lors de la récupération de l'image supprimée :", error);
-                        }
-                    }
-                }
-            }
+    if (message.attachments.size > 0) {
+      // Les URLs des pièces jointes deviennent inaccessibles dès que Discord traite
+      // la suppression du message : on ne peut donc pas les re-télécharger ici. On
+      // utilise à la place le cache rempli à la création du message (voir
+      // utils/attachmentCache.js), seul moment où elles sont encore récupérables.
+      const cached = getCachedAttachments(message.id)
 
-            // Si le message contenait des images qu'on a réussi à sauver
-            if (filesToSend.length > 0) {
-                logEmbed.addFields({ name: 'Pièce(s) jointe(s) sauvegardée(s) :', value: `⚠️ L'image ci-dessous a été supprimée par l'utilisateur.` });
-                await channel.send({ embeds: [logEmbed], files: filesToSend });
-            } else {
-                // Si le message contenait une image mais qu'elle a été purgée trop vite par Discord
-                if (message.attachments.size > 0) {
-                    logEmbed.addFields({ name: 'Pièce jointe :', value: '❌ L\'image a été supprimée trop rapidement des serveurs de Discord pour être récupérée.' });
-                }
-                await channel.send({ embeds: [logEmbed] });
-            }
+      if (cached && cached.length > 0) {
+        let imageAttached = false
+
+        for (const file of cached) {
+          filesToSend.push(new AttachmentBuilder(file.buffer, { name: file.name }))
+
+          if (!imageAttached && file.contentType?.startsWith('image/')) {
+            logEmbed.setImage(`attachment://${file.name}`)
+            imageAttached = true
+          }
+        }
+
+        if (cached.length < message.attachments.size) {
+          logEmbed.addFields({ name: 'Pièces jointes manquantes', value: '⚠️ Certaines pièces jointes étaient trop volumineuses pour être sauvegardées et n\'ont pas pu être récupérées.' })
+        }
+      } else {
+        logEmbed.addFields({ name: 'Pièces jointes perdues', value: '❌ Les fichiers n\'ont pas pu être récupérés (message envoyé avant le dernier redémarrage du bot, ou fichiers trop volumineux).' })
+      }
     }
+
+    if (filesToSend.length > 0) {
+      logEmbed.addFields({ name: 'Pièces jointes sauvegardées', value: '⚠️ Les fichiers ci-dessous ont pu être récupérés avant suppression.' })
+      await channel.send({ embeds: [logEmbed], files: filesToSend })
+    } else {
+      await channel.send({ embeds: [logEmbed] })
+    }
+  }
 }

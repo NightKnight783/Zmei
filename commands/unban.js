@@ -1,23 +1,23 @@
 const { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField, EmbedBuilder, Colors } = require('discord.js')
-const { testStaff, getEmbedAuthor } = require('../utils/utils')
+const { getEmbedAuthor } = require('../utils/utils')
 const { getGuildConfig } = require('../utils/constants.js')
 const { addSanction } = require('../utils/sanctions')
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('ban')
-    .setDescription('Bannis quelqu\'un.')
+    .setName('unban')
+    .setDescription('Débannis quelqu\'un.')
     .addUserOption(option =>
       option
-        .setName('membre')
-        .setDescription('Le membre a ban')
+        .setName('utilisateur')
+        .setDescription('L\'utilisateur à débannir (par ID s\'il n\'est plus sur le serveur)')
         .setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
     .addStringOption(option =>
       option
         .setName('raison')
         .setRequired(false)
-        .setDescription('La raison du banissement')
+        .setDescription('La raison du débannissement')
     ),
   async execute (interaction) {
     const author = getEmbedAuthor(interaction.user)
@@ -35,36 +35,33 @@ module.exports = {
       return
     }
 
-    const memberToBan = interaction.options.getUser('membre')
+    const userToUnban = interaction.options.getUser('utilisateur')
     const reason = interaction.options.getString('raison') || 'Aucune raison donnée'
 
-    if (testStaff(memberToBan, interaction)) { return }
+    const ban = await server.bans.fetch(userToUnban.id).catch(() => null)
+    if (!ban) {
+      const embed = new EmbedBuilder()
+        .setColor(Colors.Red)
+        .setAuthor(author)
+        .setTitle(`${userToUnban.displayName} n'est pas banni de ce serveur.`)
 
-    const mpEmbed = new EmbedBuilder()
-      .setColor(Colors.Red)
-      .setAuthor(author)
-      .setTitle(`Vous avez été banni du serveur ${server.name}`)
-      .setDescription(`Raison: [${reason}]`)
-
-    try {
-      await memberToBan.send({ embeds: [mpEmbed] })
-    } catch (error) {
-      // L'utilisateur a ses MPs fermés, on ignore
+      await interaction.reply({ embeds: [embed], ephemeral: true })
+      return
     }
 
-    await server.bans.create(memberToBan.id, { reason })
+    await server.bans.remove(userToUnban.id, reason)
 
-    await addSanction(memberToBan.id, memberToBan.displayName, {
-      type: 'Ban',
+    await addSanction(userToUnban.id, userToUnban.displayName, {
+      type: 'Unban',
       date: Date.now(),
       moderator: interaction.user.id,
       reason
     })
 
     const embed = new EmbedBuilder()
-      .setColor(Colors.Grey)
+      .setColor(Colors.Green)
       .setAuthor(author)
-      .setTitle(`Le membre ${memberToBan.displayName} a bien été banni!`)
+      .setTitle(`${userToUnban.displayName} a bien été débanni!`)
       .setDescription(`Raison: [${reason}]`)
 
     await interaction.reply({ embeds: [embed] })
@@ -73,9 +70,9 @@ module.exports = {
     const channel = server.channels.cache.get(logChannel)
     if (channel) {
       const logEmbed = new EmbedBuilder()
-        .setColor(Colors.Grey)
+        .setColor(Colors.Green)
         .setAuthor(author)
-        .setTitle(`Le membre ${memberToBan.displayName} a été banni par ${interaction.user.displayName}`)
+        .setTitle(`${userToUnban.displayName} a été débanni par ${interaction.user.displayName}`)
         .setDescription(`Raison: [${reason}]`)
 
       await channel.send({ embeds: [logEmbed] })

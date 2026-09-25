@@ -1,10 +1,39 @@
-const { SlashCommandBuilder, EmbedBuilder, Colors, PermissionFlagsBits } = require('discord.js')
-const { Database } = require('sqlite3')
+const { SlashCommandBuilder, EmbedBuilder, Colors, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js')
+const { getSanctions } = require('../utils/sanctions')
+const { getEmbedAuthor } = require('../utils/utils')
+
+const PAGE_SIZE = 10
+const COLLECTOR_TIME = 3 * 60 * 1000 // 3 minutes
+
+const buildEmbed = (author, userToCheck, server, sanctions, page, totalPages) => {
+  const embed = new EmbedBuilder()
+    .setColor(Colors.Orange)
+    .setAuthor(author)
+    .setTitle(`Le membre ${userToCheck.displayName} possède ${sanctions.length} sanction(s) enregistrée(s)`)
+    .setFooter({ text: `Page ${page + 1}/${totalPages} — Utilisez le numéro (#) avec /sanction-remove pour en supprimer une` })
+
+  const pageItems = sanctions.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+
+  for (const sanct of pageItems) {
+    const moderator = server.members.cache.get(sanct.moderator)
+    embed.addFields({
+      name: `#${sanct.numero} · ${sanct.type} <t:${Math.floor(sanct.date / 1000)}> par ${moderator ? moderator.displayName : 'Erreur'}${sanct.time ? ' pendant ' + sanct.time : ''}`,
+      value: `Raison: [${sanct.reason}]`
+    })
+  }
+
+  return embed
+}
+
+const buildRow = (page, totalPages) => new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId('sanctions_prev').setLabel('◀ Précédent').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+  new ButtonBuilder().setCustomId('sanctions_next').setLabel('Suivant ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1)
+)
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('inspect')
-    .setDescription('Montre les 10 dernieres sanctions d\'un membre.')
+    .setDescription('Montre les sanctions d\'un membre.')
     .addUserOption(option =>
       option
         .setName('membre')
@@ -12,70 +41,60 @@ module.exports = {
         .setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
   async execute (interaction) {
-
-    const author = {
-      name: interaction.user.displayName,
-      iconURL: 'https://cdn.discordapp.com/avatars/' + interaction.user.id + '/' + interaction.user.avatar
-    }
-
-    const db = new Database('Database.sqlite')
+    const author = getEmbedAuthor(interaction.user)
     const userToCheck = interaction.options.getUser('membre')
     const server = interaction.guild
 
-    db.serialize(() => {
-      db.get('SELECT * FROM data WHERE userId = ?', [userToCheck.id], async (error, value) => {
-        if (error) {
-          console.error(error)
-          return
-        }
+    const rawSanctions = await getSanctions(userToCheck.id)
 
-        if (!value) {
+    if (rawSanctions.length === 0) {
+      const embed = new EmbedBuilder()
+        .setColor(Colors.Green)
+        .setAuthor(author)
+        .setTitle(`Le membre ${userToCheck.displayName} ne possède aucune sanction enregistrée!`)
 
-          db.run('INSERT into data (userId, userName) values (?, ?)', [userToCheck.id, userToCheck.displayName])
-        
-          const embed = new EmbedBuilder()
-            .setColor(Colors.Green)
-            .setAuthor(author)
-            .setTitle(`Le membre ${userToCheck.displayName} ne possède aucune sanction enregistré!`)
+      await interaction.reply({ embeds: [embed] })
+      return
+    }
 
-          await interaction.reply(
-            {
-              embeds: [embed]
-            })
+    // On associe à chaque sanction son numéro d'origine (ordre de création, stable
+    // dans le temps) avant de trier par date pour l'affichage.
+    const sanctions = rawSanctions
+      .map((sanct, i) => ({ ...sanct, numero: i + 1 }))
+      .sort((a, b) => b.date - a.date)
 
-        } else if (!(JSON.parse(value.sanctions)).length) {
-          const embed = new EmbedBuilder()
-            .setColor(Colors.Green)
-            .setAuthor(author)
-            .setTitle(`Le membre ${userToCheck.displayName} ne possède aucune sanction enregistré!`)
+    const totalPages = Math.ceil(sanctions.length / PAGE_SIZE)
+    let page = 0
 
-          await interaction.reply(
-            {
-              embeds: [embed]
-            })
+    const embed = buildEmbed(author, userToCheck, server, sanctions, page, totalPages)
+    const components = totalPages > 1 ? [buildRow(page, totalPages)] : []
 
-        } else {
-          const sanct = (JSON.parse(value.sanctions)).sort((a, b) => { return b.date - a.date })
-          const embed = new EmbedBuilder()
-            .setColor(Colors.Orange)
-            .setAuthor(author)
-            .setTitle(`Le membre ${userToCheck.displayName} possède ${sanct.length} sanction(s) enregistré!`)
+    await interaction.reply({ embeds: [embed], components })
 
-          for (var i = 0; i < sanct.length && i < 10; i++) {
-            embed.addFields({
-              name: `${sanct[i].type} <t:${(sanct[i].date - (sanct[i].date % 1000)) / 1000}> par ${server.members.cache.get(sanct[i].moderator)? server.members.cache.get(sanct[i].moderator).displayName : 'Erreur'} ${sanct[i].time? ' pendant ' + sanct[i].time : ''}`,
-              value: 'Reason: [' + sanct[i].reason + "]"
-            })
-          }
+    if (totalPages <= 1) return
 
-          await interaction.reply(
-            {
-              embeds: [embed]
-            })
-        }
+    const message = await interaction.fetchReply()
+    const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, time: COLLECTOR_TIME })
 
-        db.close()
+    collector.on('collect', async i => {
+      if (i.user.id !== interaction.user.id) {
+        await i.reply({ content: 'Seul l\'auteur de la commande peut changer de page.', ephemeral: true })
+        return
+      }
+
+      page += i.customId === 'sanctions_next' ? 1 : -1
+      await i.update({
+        embeds: [buildEmbed(author, userToCheck, server, sanctions, page, totalPages)],
+        components: [buildRow(page, totalPages)]
       })
+    })
+
+    collector.on('end', async () => {
+      try {
+        await interaction.editReply({ components: [] })
+      } catch (error) {
+        // Le message a peut-être été supprimé entre temps, on ignore
+      }
     })
   }
 }

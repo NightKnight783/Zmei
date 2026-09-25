@@ -1,18 +1,13 @@
 const { SlashCommandBuilder, EmbedBuilder, Colors } = require('discord.js')
-const { Database } = require('sqlite3')
-const { getMedal } = require('../utils/utils')
+const { db } = require('../utils/database')
+const { getMedal, getEmbedAuthor } = require('../utils/utils')
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('leaderboard')
     .setDescription('Montre les membres avec le plus d\'xp.'),
   async execute (interaction) {
-    const author = {
-      name: interaction.user.globalName,
-      iconURL: 'https://cdn.discordapp.com/avatars/' + interaction.user.id + '/' + interaction.user.avatar
-    }
-
-    const db = new Database('Database.sqlite')
+    const author = getEmbedAuthor(interaction.user)
 
     db.all('SELECT * FROM data ORDER BY level DESC, xp DESC LIMIT 10', [], (error, value) => {
       if (error) {
@@ -32,8 +27,6 @@ module.exports = {
           value: 'Level: ' + value[i - 1].level + ' | Xp: ' + value[i - 1].xp + ''
         })
       }
-
-      db.close()
 
       interaction.reply({
         embeds: [embed]

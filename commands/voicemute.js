@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField, EmbedBuilder, Colors } = require('discord.js')
-const { Database } = require('sqlite3')
-const { testStaff } = require('../utils/utils')
-const { logChannel } = require('../utils/constants.js')
+const { testStaff, getEmbedAuthor } = require('../utils/utils')
+const { getGuildConfig } = require('../utils/constants.js')
+const { addSanction } = require('../utils/sanctions')
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -20,12 +20,7 @@ module.exports = {
         .setDescription('La raison de la coupure micro')
     ),
   async execute (interaction) {
-    const db = new Database('Database.sqlite')
-
-    const author = {
-      name: interaction.user.displayName,
-      iconURL: 'https://cdn.discordapp.com/avatars/' + interaction.user.id + '/' + interaction.user.avatar
-    }
+    const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
     const targetMember = server.members.cache.get(interaction.user.id)
@@ -42,7 +37,7 @@ module.exports = {
     }
 
     const userToMute = interaction.options.getUser('membre')
-    const reason = interaction.options.getString('raison') ? interaction.options.getString('raison') : 'Aucune raison donnée'
+    const reason = interaction.options.getString('raison') || 'Aucune raison donnée'
 
     // Protection du staff
     if (testStaff(userToMute, interaction)) { return }
@@ -59,7 +54,7 @@ module.exports = {
       return
     }
 
-    // NOUVEAU : Vérification si le membre est DÉJÀ mute
+    // Vérification si le membre est DÉJÀ mute
     if (member.voice.mute) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
@@ -67,7 +62,6 @@ module.exports = {
         .setTitle(`Le membre ${userToMute.displayName} a déjà son micro coupé par le serveur.`)
 
       await interaction.reply({ embeds: [embed], ephemeral: true })
-      db.close()
       return
     }
 
@@ -92,49 +86,32 @@ module.exports = {
       console.log("Impossible d'envoyer un MP à l'utilisateur (DMs fermés)")
     }
 
-    // Structure de la sanction pour la base de données
-    const Sanct = {
+    await addSanction(userToMute.id, userToMute.displayName, {
       type: 'VoiceMute',
       date: Date.now(),
       moderator: interaction.user.id,
       reason
-    }
-
-    // Sauvegarde en Base de Données
-    db.serialize(() => {
-      db.get('SELECT * FROM data WHERE userId = ?', [userToMute.id], async (error, value) => {
-        if (error) {
-          console.error(error)
-          return
-        }
-
-        if (!value) {
-          db.run('INSERT into data (userId, userName, sanctions) values (?, ?, ?)', [userToMute.id, userToMute.displayName, JSON.stringify([Sanct])])
-        } else {
-          db.run('UPDATE data SET sanctions = ? WHERE userId = ?', JSON.stringify([...JSON.parse(value.sanctions), Sanct]), userToMute.id)
-        }
-
-        // Réponses et Logs
-        const embed = new EmbedBuilder()
-          .setColor(Colors.Grey)
-          .setAuthor(author)
-          .setTitle(`Le micro de ${userToMute.displayName} a bien été coupé !`)
-          .setDescription(`Raison: [${reason}]`)
-
-        const logEmbed = new EmbedBuilder()
-          .setColor(Colors.Grey)
-          .setAuthor(author)
-          .setTitle(`Le micro de ${userToMute.displayName} a été coupé par ${interaction.user.displayName}`)
-          .setDescription(`Raison: [${reason}]`)
-
-        await interaction.reply({ embeds: [embed] })
-
-        const channel = server.channels.cache.get(logChannel)
-        if (channel) {
-          await channel.send({ embeds: [logEmbed] })
-        }
-        db.close()
-      })
     })
+
+    // Réponses et Logs
+    const embed = new EmbedBuilder()
+      .setColor(Colors.Grey)
+      .setAuthor(author)
+      .setTitle(`Le micro de ${userToMute.displayName} a bien été coupé !`)
+      .setDescription(`Raison: [${reason}]`)
+
+    await interaction.reply({ embeds: [embed] })
+
+    const { logChannel } = getGuildConfig(server.id)
+    const channel = server.channels.cache.get(logChannel)
+    if (channel) {
+      const logEmbed = new EmbedBuilder()
+        .setColor(Colors.Grey)
+        .setAuthor(author)
+        .setTitle(`Le micro de ${userToMute.displayName} a été coupé par ${interaction.user.displayName}`)
+        .setDescription(`Raison: [${reason}]`)
+
+      await channel.send({ embeds: [logEmbed] })
+    }
   }
 }

@@ -1,53 +1,42 @@
-const { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField, EmbedBuilder, Colors } = require('discord.js');
-const { Database } = require('sqlite3');
-const { testStaff } = require('../utils/utils');
-const { logChannel } = require('../utils/constants.js');
-
+const { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField, EmbedBuilder, Colors } = require('discord.js')
+const { testStaff, getEmbedAuthor } = require('../utils/utils')
+const { getGuildConfig } = require('../utils/constants.js')
+const { addSanction } = require('../utils/sanctions')
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('warn')
-	.setDescription('Donne un avertissement à quelqu\'un.')
-	.addUserOption(option =>
-    option
-      .setName('membre')
-      .setDescription('Le membre a avertir')
-      .setRequired(true))
-	.setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
-  .addStringOption(option =>
-    option
-      .setName('raison')
-      .setRequired(false)
-		.setDescription('La raison de l\'avertissement')
-	),
+    .setDescription('Donne un avertissement à quelqu\'un.')
+    .addUserOption(option =>
+      option
+        .setName('membre')
+        .setDescription('Le membre a avertir')
+        .setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addStringOption(option =>
+      option
+        .setName('raison')
+        .setRequired(false)
+        .setDescription('La raison de l\'avertissement')
+    ),
   async execute (interaction) {
-    const db = new Database('Database.sqlite')
-
-    const author = {
-      name: interaction.user.displayName,
-      iconURL: 'https://cdn.discordapp.com/avatars/' + interaction.user.id + '/' + interaction.user.avatar
-    }
+    const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
     const member = server.members.cache.get(interaction.user.id)
 
     if (!member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-        const embed = new EmbedBuilder()
-          .setColor(Colors.Red)
-          .setAuthor(author)
-          .setTitle('Désolé mais vous n\'avez pas la permission d\'utiliser cette commande. [Requiert la permission "Moderate Members"]')
+      const embed = new EmbedBuilder()
+        .setColor(Colors.Red)
+        .setAuthor(author)
+        .setTitle('Désolé mais vous n\'avez pas la permission d\'utiliser cette commande. [Requiert la permission "Moderate Members"]')
 
-      await interaction.reply(
-        {
-          embeds: [embed],
-          ephemeral: true
-        })
-
+      await interaction.reply({ embeds: [embed], ephemeral: true })
       return
     }
 
     const userToWarn = interaction.options.getUser('membre')
-    const reason = interaction.options.getString('raison') ? interaction.options.getString('raison') : 'Aucune raison donnée'
+    const reason = interaction.options.getString('raison') || 'Aucune raison donnée'
 
     if (testStaff(userToWarn, interaction)) { return }
 
@@ -60,52 +49,34 @@ module.exports = {
     try {
       await userToWarn.send({ embeds: [mpEmbed] })
     } catch (error) {
-      console.log(error)
+      // L'utilisateur a ses MPs fermés, on ignore
     }
 
-    const Sanct = {
+    await addSanction(userToWarn.id, userToWarn.displayName, {
       type: 'Warn',
       date: Date.now(),
       moderator: interaction.user.id,
       reason
-    }
-
-    db.serialize(() => {
-      db.get('SELECT * FROM data WHERE userId = ?', [userToWarn.id], async (error, value) => {
-        if (error) {
-          console.error(error)
-          return
-        }
-
-        if (!value) {
-          db.run('INSERT into data (userId, userName, sanctions) values (?, ?, ?)', [userToWarn.id, userToWarn.displayName, JSON.stringify([Sanct])])
-        } else {
-          db.run('UPDATE data SET sanctions = ? WHERE userId = ?', JSON.stringify([...JSON.parse(value.sanctions), Sanct]), userToWarn.id)
-        }
-
-        const embed = new EmbedBuilder()
-          .setColor(Colors.Grey)
-          .setAuthor(author)
-          .setTitle(`Le membre ${userToWarn.displayName} a bien été avertis!`)
-          .setDescription(`Raison: [${reason}]`)
-
-        const logEmbed = new EmbedBuilder()
-          .setColor(Colors.Grey)
-          .setAuthor(author)
-          .setTitle(`Le membre ${userToWarn.displayName} a été avertis par ${interaction.user.displayName}`)
-          .setDescription(`Raison: [${reason}]`)
-
-        await interaction.reply(
-          {
-            embeds: [embed]
-          })
-
-        const channel = server.channels.cache.get(logChannel)
-        if (channel) {
-          await channel.send({ embeds: [logEmbed]})
-        }
-        db.close()
-      })
     })
+
+    const embed = new EmbedBuilder()
+      .setColor(Colors.Grey)
+      .setAuthor(author)
+      .setTitle(`Le membre ${userToWarn.displayName} a bien été avertis!`)
+      .setDescription(`Raison: [${reason}]`)
+
+    await interaction.reply({ embeds: [embed] })
+
+    const { logChannel } = getGuildConfig(server.id)
+    const channel = server.channels.cache.get(logChannel)
+    if (channel) {
+      const logEmbed = new EmbedBuilder()
+        .setColor(Colors.Grey)
+        .setAuthor(author)
+        .setTitle(`Le membre ${userToWarn.displayName} a été avertis par ${interaction.user.displayName}`)
+        .setDescription(`Raison: [${reason}]`)
+
+      await channel.send({ embeds: [logEmbed] })
+    }
   }
 }

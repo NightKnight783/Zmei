@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField, EmbedBuilder, Colors } = require('discord.js')
-const { Database } = require('sqlite3')
-const { testStaff } = require('../utils/utils')
-const { logChannel } = require('../utils/constants.js')
+const { getEmbedAuthor } = require('../utils/utils')
+const { getGuildConfig } = require('../utils/constants.js')
+const { addSanction } = require('../utils/sanctions')
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -13,14 +13,9 @@ module.exports = {
         .setDescription('Le membre à qui redonner la parole')
         .setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.MuteMembers),
-    
-  async execute (interaction) {
-    const db = new Database('Database.sqlite')
 
-    const author = {
-      name: interaction.user.displayName,
-      iconURL: 'https://cdn.discordapp.com/avatars/' + interaction.user.id + '/' + interaction.user.avatar
-    }
+  async execute (interaction) {
+    const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
     const targetMember = server.members.cache.get(interaction.user.id)
@@ -38,8 +33,6 @@ module.exports = {
     const userToUnmute = interaction.options.getUser('membre')
     const reason = 'Parole rétablie par le modérateur'
 
-    if (testStaff(userToUnmute, interaction)) { return }
-
     const member = await server.members.fetch(userToUnmute.id).catch(() => null)
     if (!member || !member.voice.channel) {
       const embed = new EmbedBuilder()
@@ -51,7 +44,7 @@ module.exports = {
       return
     }
 
-    // NOUVEAU : Vérification si le membre n'est PAS mute (déjà actif)
+    // Vérification si le membre n'est PAS mute (déjà actif)
     if (!member.voice.mute) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
@@ -59,7 +52,6 @@ module.exports = {
         .setTitle(`Le micro de ${userToUnmute.displayName} n'est pas coupé.`)
 
       await interaction.reply({ embeds: [embed], ephemeral: true })
-      db.close()
       return
     }
 
@@ -83,45 +75,29 @@ module.exports = {
       console.log("Impossible d'envoyer un MP à l'utilisateur")
     }
 
-    const Sanct = {
+    await addSanction(userToUnmute.id, userToUnmute.displayName, {
       type: 'VoiceUnmute',
       date: Date.now(),
       moderator: interaction.user.id,
-      reason: reason
-    }
-
-    // Sauvegarde de l'historique (annulation du mute) en BDD
-    db.serialize(() => {
-      db.get('SELECT * FROM data WHERE userId = ?', [userToUnmute.id], async (error, value) => {
-        if (error) {
-          console.error(error)
-          return
-        }
-
-        if (!value) {
-          db.run('INSERT into data (userId, userName, sanctions) values (?, ?, ?)', [userToUnmute.id, userToUnmute.displayName, JSON.stringify([Sanct])])
-        } else {
-          db.run('UPDATE data SET sanctions = ? WHERE userId = ?', JSON.stringify([...JSON.parse(value.sanctions), Sanct]), userToUnmute.id)
-        }
-
-        const embed = new EmbedBuilder()
-          .setColor(Colors.Green)
-          .setAuthor(author)
-          .setTitle(`Le micro de ${userToUnmute.displayName} a bien été réactivé !`)
-
-        const logEmbed = new EmbedBuilder()
-          .setColor(Colors.Green)
-          .setAuthor(author)
-          .setTitle(`Le micro de ${userToUnmute.displayName} a été réactivé par ${interaction.user.displayName}`)
-
-        await interaction.reply({ embeds: [embed] })
-
-        const channel = server.channels.cache.get(logChannel)
-        if (channel) {
-          await channel.send({ embeds: [logEmbed] })
-        }
-        db.close()
-      })
+      reason
     })
+
+    const embed = new EmbedBuilder()
+      .setColor(Colors.Green)
+      .setAuthor(author)
+      .setTitle(`Le micro de ${userToUnmute.displayName} a bien été réactivé !`)
+
+    await interaction.reply({ embeds: [embed] })
+
+    const { logChannel } = getGuildConfig(server.id)
+    const channel = server.channels.cache.get(logChannel)
+    if (channel) {
+      const logEmbed = new EmbedBuilder()
+        .setColor(Colors.Green)
+        .setAuthor(author)
+        .setTitle(`Le micro de ${userToUnmute.displayName} a été réactivé par ${interaction.user.displayName}`)
+
+      await channel.send({ embeds: [logEmbed] })
+    }
   }
 }

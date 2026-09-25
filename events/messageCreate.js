@@ -1,6 +1,7 @@
 const { EmbedBuilder, Colors, Events } = require('discord.js')
-const { Database } = require('sqlite3')
-const { getRandomInt } = require('../utils/utils')
+const { db } = require('../utils/database')
+const { getRandomInt, getEmbedAuthor } = require('../utils/utils')
+const { cacheAttachments } = require('../utils/attachmentCache')
 const { clientId } = require('../config.json')
 
 const cooldown = 15 * 1000 // 15s
@@ -11,7 +12,10 @@ module.exports = {
   async execute (message) {
     if (message.author.bot) return
 
-    const db = new Database('Database.sqlite')
+    if (message.attachments.size > 0) {
+      // Volontairement non attendu : ne doit pas ralentir le traitement du message.
+      cacheAttachments(message.id, message.attachments)
+    }
 
     if (message.content?.includes(`<@${clientId}>`)) {
       // Handle the bot mention
@@ -29,26 +33,26 @@ module.exports = {
           // Create user in Database if not exist
           db.run('INSERT into data (userId, userName, xpCooldown) values (?, ?, ?)', [message.author.id, message.author.displayName, Date.now()])
         } else {
-          // Si le dernier message envoyé date de moins de 15s on ignore
+          // Vérification du cooldown (15 secondes entre chaque gain d'XP)
           if (Date.now() - (new Date(value.xpCooldown)).getTime() < cooldown) return
 
           let level = parseInt(value.level)
+          // Gain d'XP aléatoire entre 20 et 50
           let xp = parseInt(value.xp) + getRandomInt(30, 20)
 
+          // Vérification du passage de niveau (formule: 500 + (niveau - 1) * 100)
+          // Le niveau max est capé à 100.
           if (level < 100 && 500 + (level - 1) * 100 <= xp) {
             xp -= (500 + (level - 1) * 100)
             level++
 
-            const author = {
-              name: message.author.displayName,
-              iconURL: 'https://cdn.discordapp.com/avatars/' + message.author.id + '/' + message.author.avatar
-            }
+            const author = getEmbedAuthor(message.author)
 
             const embed = new EmbedBuilder()
               .setColor(Colors.Blue)
               .setAuthor(author)
               .setTitle(`Bravo ${message.author.displayName}!`)
-              .setDescription(`Vous avez attend le niveau ${level}!`)
+              .setDescription(`Vous avez atteint le niveau ${level}!`) // Correction de la faute d'orthographe "attend" -> "atteint"
 
             const channel = message.guild.channels.cache.get(message.channelId)
 
@@ -56,6 +60,8 @@ module.exports = {
 
             await channel.send({ embeds: [embed] })
           }
+          
+          // Mise à jour de la base de données
           db.run('UPDATE data SET xp = ?, level = ?, userName = ?, xpCooldown = ? WHERE userId = ?',
             [
               xp,
@@ -65,8 +71,6 @@ module.exports = {
               value.userId
             ])
         }
-
-        db.close()
       })
     })
   }

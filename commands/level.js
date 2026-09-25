@@ -1,17 +1,13 @@
 const { SlashCommandBuilder, EmbedBuilder, Colors } = require('discord.js')
-const { Database } = require('sqlite3')
+const { db } = require('../utils/database')
+const { getEmbedAuthor } = require('../utils/utils')
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('level')
     .setDescription('Montre votre niveau actuel.'),
   async execute (interaction) {
-    const db = new Database('Database.sqlite')
-
-    const author = {
-      name: interaction.user.globalName,
-      iconURL: 'https://cdn.discordapp.com/avatars/' + interaction.user.id + '/' + interaction.user.avatar
-    }
+    const author = getEmbedAuthor(interaction.user)
 
     db.serialize(() => {
       db.get('SELECT * FROM data WHERE userId = ?', [interaction.user.id], async (error, value) => {
@@ -46,8 +42,6 @@ module.exports = {
               embeds: [embed]
             })
         }
-
-        db.close()
       })
     })
   }
