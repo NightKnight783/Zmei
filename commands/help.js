@@ -7,6 +7,7 @@ const COLLECTOR_TIME = 5 * 60 * 1000 // 5 minutes
 const CATEGORIES = {
   Modération: ['ban', 'unban', 'kick', 'mute', 'unmute', 'voicemute', 'voiceunmute', 'warn', 'clear', 'inspect', 'sanction-remove'],
   Communauté: ['embed', 'event', 'setup-roles'],
+  'Site de l\x27association': ['antre', 'forum'],
   'XP & Fun': ['level', 'leaderboard', 'roll'],
   Utilitaire: ['ping', 'help']
 }

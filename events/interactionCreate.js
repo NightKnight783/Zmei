@@ -19,6 +19,33 @@ module.exports = {
         console.error(`Error executing ${interaction.commandName}`)
         console.error(error)
       }
+    } else if (interaction.isAutocomplete()) {
+      // Saisie semi-automatique (listes de choix des commandes /antre et /forum)
+      const command = interaction.client.commands.get(interaction.commandName)
+      if (!command || typeof command.autocomplete !== 'function') return
+      try {
+        await command.autocomplete(interaction)
+      } catch (error) {
+        console.error(`Autocomplete ${interaction.commandName}`, error)
+      }
+    } else if (interaction.isButton()) {
+      // Boutons des commandes qui en gèrent (« antre_code » pour /antre) ; les autres (ex. « help_… ») ont leurs propres collecteurs
+      const command = interaction.client.commands.get(interaction.customId.split('_')[0])
+      if (!command || typeof command.bouton !== 'function') return
+      try {
+        await command.bouton(interaction)
+      } catch (error) {
+        console.error(`Bouton ${interaction.customId}`, error)
+      }
+    } else if (interaction.isModalSubmit()) {
+      // Fenêtres de saisie : l'identifiant commence par le nom de la commande (« antre_lier » pour /antre)
+      const command = interaction.client.commands.get(interaction.customId.split('_')[0])
+      if (!command || typeof command.modal !== 'function') return
+      try {
+        await command.modal(interaction)
+      } catch (error) {
+        console.error(`Fenêtre ${interaction.customId}`, error)
+      }
     } else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'pole_role_select') {
         const config = getGuildConfig(interaction.guild.id);
