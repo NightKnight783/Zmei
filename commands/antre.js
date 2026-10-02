@@ -1,21 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder, Colors, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js')
 const antre = require('../utils/antre.js')
+// La liste des événements à venir (gardée une minute, elle sert aussi à la saisie semi-automatique) et leur affichage sont partagés avec /event
+const { COULEUR, evenementsAVenir, nomEvenement, nomTable, embedListe } = require('../utils/antre-affichage.js')
 
 const EPHEMERE = MessageFlags.Ephemeral
-const COULEUR = 0xe0953a // l'orange du site
-
-// Liste des événements à venir, gardée une minute : sert aux listes de choix (saisie semi-automatique)
-let cacheEvenements = { date: 0, liste: [] }
-async function evenementsAVenir () {
-  if (Date.now() - cacheEvenements.date > 60_000) {
-    const r = await antre.get('/bot/evenements')
-    cacheEvenements = { date: Date.now(), liste: r.evenements.filter((e) => !e.termine) }
-  }
-  return cacheEvenements.liste
-}
-
-const nomEvenement = (e) => antre.couper(`${antre.dateEvenement(e.debut)} — ${e.titre}`, 100)
-const nomTable = (t) => antre.couper(`${t.titre || t.jeu}${t.titre ? ` (${t.jeu})` : ''} — ${t.mj}${t.cloturee ? ' · inscriptions closes' : ''}`, 100)
 
 /** Lit l'identifiant choisi dans une liste (la personne peut aussi avoir tapé du texte libre : on le refuse poliment). */
 const lireId = (valeur) => (/^\d+$/.test(valeur ?? '') ? Number.parseInt(valeur, 10) : null)
@@ -169,20 +157,9 @@ module.exports = {
   // --- Événements ------------------------------------------------------------------------------------------------------
 
   async sous_evenements () {
-    const liste = (await evenementsAVenir()).slice(0, 8)
+    const liste = await evenementsAVenir()
     if (!liste.length) return { content: 'Aucun événement à venir pour le moment.' }
-    const embed = new EmbedBuilder().setColor(COULEUR).setTitle('📅 Prochains événements').setURL(antre.urlSite('/evenements'))
-    for (const e of liste) {
-      const tables = e.tables.length
-        ? `${e.tables.length} table${e.tables.length > 1 ? 's' : ''} · ${e.nbInteresses} intéressé${e.nbInteresses > 1 ? 's' : ''}`
-        : 'Pas de table : venez simplement.'
-      embed.addFields({
-        name: antre.couper(`${antre.dateEvenement(e.debut)} — ${e.titre}`, 256),
-        value: antre.couper(`${e.lieu ? `${e.lieu}\n` : ''}${tables}\n[Voir sur le site](${antre.urlSite(`/evenements/${e.id}`)})`, 1024)
-      })
-    }
-    embed.setFooter({ text: "Dire quelle table vous intéresse n'est pas une réservation : la répartition se fait sur place. — /antre interet" })
-    return { embeds: [embed] }
+    return { embeds: [embedListe(liste)] }
   },
 
   async sous_interet (interaction) {

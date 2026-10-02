@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js')
 const antre = require('./antre.js')
+const evenements = require('./antre-evenements.js')
 
 /** Relève de secours : si le signal d'un envoi se perdait (coupure), le bot relit tout de même la file à ce rythme. */
 const INTERVALLE_SECOURS = 300_000
@@ -59,7 +60,8 @@ async function distribuer (client) {
 }
 
 /**
- * Connexion permanente au site : il signale « envoi » dès qu'un message Discord est en file, et le bot le distribue aussitôt.
+ * Connexion permanente au site : il signale « envoi » dès qu'un message Discord est en file, et le bot le distribue aussitôt ;
+ * il signale « evenements » dès qu'un événement est créé, modifié ou supprimé, et le bot met à jour les événements Discord.
  * Si la connexion tombe (site redémarré, réseau), elle se rétablit toute seule avec un délai croissant ; à chaque (re)connexion
  * le bot relit la file, donc rien n'est perdu pendant la coupure.
  */
@@ -87,6 +89,8 @@ async function ecouterSite (client) {
           tampon = tampon.slice(coupe + 2)
           const type = /^event: (.+)$/m.exec(bloc)?.[1]
           if (type === 'pret' || type === 'envoi') void distribuer(client)
+          // Un événement a été créé, modifié ou supprimé sur le site : les événements Discord le suivent
+          if (type === 'pret' || type === 'evenements') void evenements.synchroniser(client)
         }
       }
     } catch (erreur) {
@@ -111,7 +115,10 @@ function demarrer (client) {
   }
   console.log('Notifications ANTRE activées (connexion permanente au site, relève de secours toutes les 5 minutes).')
   void ecouterSite(client)
-  setInterval(() => distribuer(client), INTERVALLE_SECOURS).unref()
+  setInterval(() => {
+    void distribuer(client)
+    void evenements.synchroniser(client)
+  }, INTERVALLE_SECOURS).unref()
 }
 
 module.exports = { demarrer }
