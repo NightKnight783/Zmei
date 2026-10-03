@@ -17,7 +17,9 @@ async function chargerListe (cle, chemin, extraire) {
   }
   return cache.liste
 }
-const sections = () => chargerListe('sections', '/forum/sections', (r) => r.sections)
+// La réponse entière du site : les catégories (Général, Jeux de rôle…) et les sections qu'elles rassemblent
+const forumComplet = () => chargerListe('sections', '/forum/sections', (r) => r)
+const sections = async () => (await forumComplet()).sections
 const recents = () => chargerListe('recents', '/forum/recents', (r) => r.sujets)
 
 module.exports = {
@@ -79,10 +81,15 @@ module.exports = {
   },
 
   async sous_sections () {
-    const liste = await sections()
+    const { categories, sections: liste } = await forumComplet()
     if (!liste.length) return { content: "Le forum n'a pas encore de section." }
-    const lignes = liste.map((s) => `• **${antre.neutraliser(s.titre)}**${s.lectureSeule ? ' 🔒' : ''} — ${s.nbSujets} sujet${s.nbSujets > 1 ? 's' : ''}${s.description ? `\n  ${antre.neutraliser(antre.couper(s.description, 120))}` : ''}`)
-    return { embeds: [new EmbedBuilder().setColor(COULEUR).setTitle('🗂️ Sections du forum').setURL(antre.urlSite('/forum')).setDescription(antre.couper(lignes.join('\n'), 4000)).setFooter({ text: '🔒 = seuls les modérateurs peuvent y écrire' })] }
+    const ligne = (s) => `• **${antre.neutraliser(s.titre)}**${s.lectureSeule ? ' 🔒' : ''} — ${s.nbSujets} sujet${s.nbSujets > 1 ? 's' : ''}`
+    // Rangées par catégorie ; celles qui n'en ont pas viennent à la fin
+    const blocs = (categories ?? []).map((c) => ({ titre: c.titre, liste: liste.filter((s) => s.categorieId === c.id) })).filter((b) => b.liste.length)
+    const autres = liste.filter((s) => !(categories ?? []).some((c) => c.id === s.categorieId))
+    if (autres.length) blocs.push({ titre: blocs.length ? 'Autres sections' : 'Sections', liste: autres })
+    const texte = blocs.map((b) => `__**${antre.neutraliser(b.titre)}**__\n${b.liste.map(ligne).join('\n')}`).join('\n\n')
+    return { embeds: [new EmbedBuilder().setColor(COULEUR).setTitle('🗂️ Sections du forum').setURL(antre.urlSite('/forum')).setDescription(antre.couper(texte, 4000)).setFooter({ text: '🔒 = seuls les modérateurs peuvent y écrire' })] }
   },
 
   async sous_chercher (interaction) {

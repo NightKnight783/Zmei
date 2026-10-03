@@ -125,6 +125,7 @@ function embedEvenement (e, libelles = {}) {
   if (e.discussionId) liens.push(`[Discussion du forum](${antre.urlSite(`/forum/sujet/${e.discussionId}`)})`)
   embed.addFields({ name: 'En résumé', value: `${bilan.join(' · ') || '—'}\n${liens.join(' · ')}` })
   embed.setFooter({ text: "Un intérêt pour une table n'est pas une réservation : la répartition se fait sur place." })
+  if (e.affiche) embed.setImage(antre.urlSite(e.affiche))
   return embed
 }
 

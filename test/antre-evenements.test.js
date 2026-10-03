@@ -287,6 +287,36 @@ describe('reflet des événements du site sur Discord', () => {
 		assert.equal(autre.appels.create, 0);
 	});
 
+	it("utilise l'affiche du site comme image de l'événement Discord, la change, la retire, et se passe d'image si Discord la refuse", async () => {
+		const e = site.creer({ affiche: '/uploads/affiches/affiche-a.jpg' });
+		await s.instance.synchroniser(serveur.client);
+		const discord = () => [...serveur.evenements.values()][0];
+		assert.equal(discord().image, antreReel.urlSite('/uploads/affiches/affiche-a.jpg'));
+
+		e.affiche = '/uploads/affiches/affiche-b.jpg';
+		await s.instance.synchroniser(serveur.client);
+		assert.equal(serveur.appels.edit, 1, "une nouvelle affiche met l'événement à jour");
+		assert.equal(discord().image, antreReel.urlSite('/uploads/affiches/affiche-b.jpg'));
+
+		e.affiche = null;
+		await s.instance.synchroniser(serveur.client);
+		assert.equal(discord().image, null, "l'affiche retirée du site retire l'image");
+
+		// Discord ne peut pas télécharger l'image : l'événement est créé quand même, sans image
+		const refus = fauxServeur('333333333333333333');
+		const creer = refus.guild.scheduledEvents.create;
+		refus.guild.scheduledEvents.create = async (donnees) => {
+			if (donnees.image) throw new Error('Cannot fetch image');
+			return creer(donnees);
+		};
+		const sans = creerSynchro(site, refus);
+		site.creer({ titre: 'Image refusée', affiche: '/uploads/affiches/affiche-c.jpg' });
+		await sans.instance.synchroniser(refus.client);
+		const cree = [...refus.evenements.values()].find((x) => x.name === 'Image refusée');
+		assert.ok(cree, "l'événement existe malgré l'image refusée");
+		assert.equal(cree.image, null);
+	});
+
 	it('regroupe les demandes simultanées : jamais deux passes en même temps, jamais de doublon', async () => {
 		site.creer();
 		await Promise.all([s.instance.synchroniser(serveur.client), s.instance.synchroniser(serveur.client), s.instance.synchroniser(serveur.client)]);

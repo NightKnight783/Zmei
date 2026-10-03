@@ -75,12 +75,14 @@ function contenuEvenement (e, libelles, antre) {
     privacyLevel: GuildScheduledEventPrivacyLevel.GuildOnly,
     entityType: GuildScheduledEventEntityType.External,
     entityMetadata: { location: antre.couper(e.lieu || 'À définir', 100) },
-    description: antre.couper(`${entete ? `${antre.neutraliser(entete)}\n\n` : ''}Détails, tables et inscription : ${lien}`, 1000)
+    description: antre.couper(`${entete ? `${antre.neutraliser(entete)}\n\n` : ''}Détails, tables et inscription : ${lien}`, 1000),
+    // L'affiche du site sert d'image de couverture (Discord la télécharge à cette adresse)
+    image: e.affiche ? antre.urlSite(e.affiche) : null
   }
 }
 
 /** Une empreinte du contenu : un événement n'est mis à jour sur Discord que si elle change. */
-const empreinte = (c) => createHash('sha1').update(JSON.stringify([c.name, c.scheduledStartTime.toISOString(), c.scheduledEndTime.toISOString(), c.entityMetadata.location, c.description])).digest('hex')
+const empreinte = (c) => createHash('sha1').update(JSON.stringify([c.name, c.scheduledStartTime.toISOString(), c.scheduledEndTime.toISOString(), c.entityMetadata.location, c.description, c.image ?? ''])).digest('hex')
 
 // --- Mémoire du lien site ↔ Discord (base du bot) ------------------------------------------------------------------------------
 
@@ -143,7 +145,7 @@ function creerSynchronisateur ({ antre, stockage, serveurs, libellesTypes, maint
           if (contenu.scheduledStartTime.getTime() <= maintenant() + MARGE_DEBUT_MS) continue // déjà commencé : Discord n'accepte plus de le créer
           const adresse = antre.urlSite(`/evenements/${e.id}`)
           const adopte = existants.find((x) => typeof x.description === 'string' && x.description.includes(adresse))
-          const discord = adopte ?? (await guild.scheduledEvents.create({ ...contenu, reason: "Événement créé sur le site de l'ANTRE" }))
+          const discord = adopte ?? (await avecImageOuSans(contenu, (c) => guild.scheduledEvents.create({ ...c, reason: "Événement créé sur le site de l'ANTRE" })))
           await stockage.enregistrer({ site_id: e.id, guild_id: guild.id, discord_id: discord.id, empreinte: adopte ? '' : marque, retire: 0 })
           if (adopte) await modifier(guild, adopte, contenu, { site_id: e.id, guild_id: guild.id, discord_id: adopte.id, empreinte: '', retire: 0 }, marque)
         } else {
@@ -187,10 +189,24 @@ function creerSynchronisateur ({ antre, stockage, serveurs, libellesTypes, maint
   async function modifier (guild, discord, contenu, ligne, marque) {
     const enCours = discord.status === GuildScheduledEventStatus.Active
     const changements = enCours
-      ? { name: contenu.name, description: contenu.description, entityMetadata: contenu.entityMetadata, scheduledEndTime: contenu.scheduledEndTime }
-      : { name: contenu.name, description: contenu.description, entityMetadata: contenu.entityMetadata, scheduledStartTime: contenu.scheduledStartTime, scheduledEndTime: contenu.scheduledEndTime }
-    await guild.scheduledEvents.edit(discord.id, { ...changements, reason: "Événement modifié sur le site de l'ANTRE" })
+      ? { name: contenu.name, description: contenu.description, entityMetadata: contenu.entityMetadata, scheduledEndTime: contenu.scheduledEndTime, image: contenu.image }
+      : { name: contenu.name, description: contenu.description, entityMetadata: contenu.entityMetadata, scheduledStartTime: contenu.scheduledStartTime, scheduledEndTime: contenu.scheduledEndTime, image: contenu.image }
+    await avecImageOuSans(changements, (c) => guild.scheduledEvents.edit(discord.id, { ...c, reason: "Événement modifié sur le site de l'ANTRE" }))
     await stockage.enregistrer({ ...ligne, empreinte: marque })
+  }
+
+  /**
+   * L'affiche du site sert d'image de couverture : Discord la télécharge à son adresse. Si cela échoue (site derrière un pare-feu,
+   * adresse locale…), l'événement est quand même créé ou mis à jour, sans image ; une prochaine modification de l'événement réessaiera.
+   */
+  async function avecImageOuSans (donnees, action) {
+    try {
+      return await action(donnees)
+    } catch (erreur) {
+      if (!donnees.image) throw erreur
+      avertir(`image ${donnees.name}`, new Error(`image de couverture refusée, événement envoyé sans (${erreur?.message ?? erreur})`))
+      return action({ ...donnees, image: null })
+    }
   }
 
   async function passer (client) {
