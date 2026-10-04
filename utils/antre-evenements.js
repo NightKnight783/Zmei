@@ -16,6 +16,11 @@ const { GuildScheduledEventPrivacyLevel, GuildScheduledEventEntityType, GuildSch
 const FUSEAU = 'Europe/Paris'
 /** Discord refuse un événement qui commence dans le passé : on laisse une minute de marge. */
 const MARGE_DEBUT_MS = 60_000
+/** Discord refuse aussi un événement (début comme fin) à plus de cinq ans : on s'arrête un peu avant. */
+const HORIZON_MS = 4.9 * 365.25 * 24 * 3_600_000
+
+/** Cet instant (début ou fin d'un événement, heure de Paris « AAAA-MM-JJTHH:MM ») est-il assez proche pour que Discord l'accepte ? */
+const dansLHorizon = (local, maintenant = Date.now()) => dateParis(local).getTime() <= maintenant + HORIZON_MS
 
 // --- Dates : l'heure du site est l'heure de Paris, sans fuseau ---------------------------------------------------------------
 
@@ -143,6 +148,7 @@ function creerSynchronisateur ({ antre, stockage, serveurs, libellesTypes, maint
       try {
         if (!ligne) {
           if (contenu.scheduledStartTime.getTime() <= maintenant() + MARGE_DEBUT_MS) continue // déjà commencé : Discord n'accepte plus de le créer
+          if (!dansLHorizon(e.debut, maintenant()) || !dansLHorizon(e.fin, maintenant())) continue // à plus de cinq ans : Discord le refuse, il sera créé le moment venu
           const adresse = antre.urlSite(`/evenements/${e.id}`)
           const adopte = existants.find((x) => typeof x.description === 'string' && x.description.includes(adresse))
           const discord = adopte ?? (await avecImageOuSans(contenu, (c) => guild.scheduledEvents.create({ ...c, reason: "Événement créé sur le site de l'ANTRE" })))
@@ -174,13 +180,74 @@ function creerSynchronisateur ({ antre, stockage, serveurs, libellesTypes, maint
         }
         if (fiche && !fiche.termine) continue // toujours à venir (au-delà des 50 premiers) : on le garde
         if (!fiche && ligne.discord_id && !ligne.retire) {
-          await guild.scheduledEvents.delete(ligne.discord_id).catch((erreur) => {
-            if (erreur?.code !== EVENEMENT_INCONNU) throw erreur
-          })
+          await supprimerEvenementDiscord(guild, ligne.discord_id)
+          existants.delete(ligne.discord_id)
         }
         await stockage.supprimer(ligne.site_id, guild.id)
       } catch (erreur) {
         avertir(`${guild.id} / événement ${ligne.site_id}`, erreur)
+      }
+    }
+
+    await nettoyerOrphelinsEtDoublons(guild, existants, evenements)
+  }
+
+  async function supprimerEvenementDiscord (guild, discordId) {
+    await guild.scheduledEvents.delete(discordId).catch((erreur) => {
+      if (erreur?.code !== EVENEMENT_INCONNU) throw erreur
+    })
+  }
+
+  /**
+   * Retire ce qui ne devrait pas être là parmi les événements Discord que le bot a lui-même créés (et dont le texte pointe vers une page de
+   * ce site) : ceux dont l'événement du site n'existe plus, et les doublons (plusieurs événements Discord pour un même événement du site :
+   * on garde celui que connaît la base du bot, sinon le plus ancien). Le lien site ↔ Discord a pu se perdre (base du bot restaurée,
+   * site réinitialisé, deux bots à la fois…) : sans ce nettoyage, les anciens événements resteraient à côté des nouveaux, en double.
+   * Les événements créés à la main, ou par quelqu'un d'autre, ne sont jamais touchés.
+   */
+  async function nettoyerOrphelinsEtDoublons (guild, existants, evenements) {
+    const idBot = guild.client?.user?.id
+    const prefixe = antre.urlSite('/evenements/')
+    const dansLaListe = new Set(evenements.map((e) => e.id))
+    const parEvenementDuSite = new Map()
+    for (const x of existants.values()) {
+      if (idBot && x.creatorId !== idBot) continue
+      const debut = typeof x.description === 'string' ? x.description.indexOf(prefixe) : -1
+      if (debut < 0) continue
+      const nombre = /^\d+/.exec(x.description.slice(debut + prefixe.length))
+      if (!nombre) continue
+      const siteId = Number(nombre[0])
+      parEvenementDuSite.set(siteId, [...(parEvenementDuSite.get(siteId) ?? []), x])
+    }
+    if (!parEvenementDuSite.size) return
+
+    const lignes = await stockage.lister(guild.id)
+    for (const [siteId, liste] of parEvenementDuSite) {
+      try {
+        let aSupprimer = []
+        let disparu = false
+        if (!dansLaListe.has(siteId)) {
+          try {
+            await antre.get(`/evenements/${siteId}`) // à venir au-delà des 50 premiers, ou terminé : on n'y touche pas
+          } catch (erreur) {
+            if (erreur.statut !== 404) throw erreur // site injoignable : on réessaiera
+            disparu = true
+          }
+        }
+        if (disparu) {
+          aSupprimer = liste
+        } else if (liste.length > 1) {
+          const connu = lignes.find((l) => l.site_id === siteId)?.discord_id
+          const garde = liste.find((x) => x.id === connu) ?? [...liste].sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1))[0]
+          aSupprimer = liste.filter((x) => x !== garde)
+        }
+        for (const x of aSupprimer) {
+          await supprimerEvenementDiscord(guild, x.id)
+          existants.delete(x.id)
+        }
+        if (disparu && lignes.some((l) => l.site_id === siteId)) await stockage.supprimer(siteId, guild.id)
+      } catch (erreur) {
+        avertir(`${guild.id} / nettoyage de l'événement ${siteId}`, erreur)
       }
     }
   }
@@ -284,6 +351,7 @@ module.exports = {
   dateParis,
   maintenantParis,
   lireDateHeure,
+  dansLHorizon,
   ajouterMinutes,
   contenuEvenement,
   empreinte,

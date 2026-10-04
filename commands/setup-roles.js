@@ -10,7 +10,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor(Colors.Purple)
       .setTitle('🎭 Choix des Pôles')
-      .setDescription('Sélectionnez dans le menu ci-dessous les pôles auxquels vous souhaitez participer !\\nVous pouvez en choisir plusieurs.');
+      .setDescription('Sélectionnez dans le menu ci-dessous les pôles auxquels vous souhaitez participer !\nVous pouvez en choisir plusieurs.');
 
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId('pole_role_select')

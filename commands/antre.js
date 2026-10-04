@@ -19,26 +19,26 @@ module.exports = {
       s
         .setName('evenements')
         .setDescription('Les prochains événements, avec leurs tables.')
-        .addBooleanOption((o) => o.setName('public').setDescription('Afficher pour tout le salon (par défaut, vous seul(e) le voyez).'))
+        .addBooleanOption((o) => o.setName('visible_par_tous').setDescription('Afficher pour tout le salon (par défaut, vous seul(e) le voyez).'))
     )
     .addSubcommand((s) =>
       s
         .setName('campagnes')
         .setDescription('Les campagnes en cours.')
-        .addBooleanOption((o) => o.setName('mes').setDescription('Seulement les campagnes que je mène, où je joue ou que je suis.'))
+        .addBooleanOption((o) => o.setName('inscrites').setDescription('Seulement celles auxquelles je suis inscrit(e) : que je mène, où je joue, ou demandées.'))
     )
     .addSubcommand((s) =>
       s
         .setName('notifications')
         .setDescription('Vos dernières notifications du site.')
-        .addBooleanOption((o) => o.setName('tout_lire').setDescription('Les marquer toutes comme lues après les avoir affichées.'))
+        .addBooleanOption((o) => o.setName('marquer_lues').setDescription('Les marquer toutes comme lues après les avoir affichées.'))
     ),
 
   async execute (interaction) {
     const sous = interaction.options.getSubcommand()
     if (sous === 'lier') return this.proposerLiaison(interaction)
 
-    const public_ = sous === 'evenements' && interaction.options.getBoolean('public') === true
+    const public_ = sous === 'evenements' && interaction.options.getBoolean('visible_par_tous') === true
     await interaction.deferReply(public_ ? {} : { flags: EPHEMERE })
     try {
       const reponse = await this[`sous_${sous}`](interaction)
@@ -149,16 +149,16 @@ module.exports = {
   // --- Campagnes et notifications ----------------------------------------------------------------------------------------
 
   async sous_campagnes (interaction) {
-    const mes = interaction.options.getBoolean('mes') === true
-    const r = mes ? await antre.get('/campagnes/miennes', { discordId: interaction.user.id }) : await antre.get('/campagnes?statut=en_cours')
-    const liste = r.campagnes.filter((c) => !mes || c.statut === 'en_cours').slice(0, 10)
-    if (!liste.length) return { content: mes ? "Vous n'avez aucune campagne en cours. Découvrez-les sur le site." : 'Aucune campagne en cours pour le moment.' }
+    const inscrites = interaction.options.getBoolean('inscrites') === true
+    const r = inscrites ? await antre.get('/campagnes/miennes', { discordId: interaction.user.id }) : await antre.get('/campagnes?statut=en_cours')
+    const liste = r.campagnes.filter((c) => !inscrites || c.statut === 'en_cours').slice(0, 10)
+    if (!liste.length) return { content: inscrites ? "Vous n'êtes inscrit(e) à aucune campagne en cours. Découvrez-les sur le site." : 'Aucune campagne en cours pour le moment.' }
     const lignes = liste.map((c) => {
       const lien = { mj: ' · **vous êtes le MJ**', actif: ' · **vous jouez**', demande: ' · demande en attente', ancien: ' · ancien joueur' }[c.monStatut] ?? ''
       const suivante = c.prochaineSeance ? ` · prochaine séance ${antre.dateEvenement(c.prochaineSeance.debut)}` : ''
       return `• [**${antre.neutraliser(c.titre)}**](${antre.urlSite(`/campagnes/${c.id}`)}) — ${antre.neutraliser(c.jeu)} · ${c.type === 'ouverte' ? 'ouverte' : 'fermée'} · ${c.nbJoueurs} joueur${c.nbJoueurs > 1 ? 's' : ''}${suivante}${lien}`
     })
-    return { embeds: [new EmbedBuilder().setColor(COULEUR).setTitle(mes ? '🎲 Mes campagnes' : '🎲 Campagnes en cours').setDescription(antre.couper(lignes.join('\n'), 4000)).setURL(antre.urlSite('/campagnes'))] }
+    return { embeds: [new EmbedBuilder().setColor(COULEUR).setTitle(inscrites ? '🎲 Mes campagnes' : '🎲 Campagnes en cours').setDescription(antre.couper(lignes.join('\n'), 4000)).setURL(antre.urlSite('/campagnes'))] }
   },
 
   async sous_notifications (interaction) {
@@ -166,14 +166,14 @@ module.exports = {
     const r = await antre.get('/notifications?limite=10', options)
     if (!r.notifications.length) return { content: 'Aucune notification pour le moment.' }
     const lignes = r.notifications.map((n) => `${n.lue ? '▫️' : '🔔'} **${antre.neutraliser(antre.couper(n.titre, 120))}**${n.corps ? `\n${antre.neutraliser(antre.couper(n.corps, 200))}` : ''}\n[Ouvrir](${antre.urlSite(n.lien)})`)
-    if (interaction.options.getBoolean('tout_lire')) await antre.post('/notifications/lues', {}, options)
+    if (interaction.options.getBoolean('marquer_lues')) await antre.post('/notifications/lues', {}, options)
     return {
       embeds: [
         new EmbedBuilder()
           .setColor(Colors.Orange)
           .setTitle('🔔 Notifications')
           .setDescription(antre.couper(lignes.join('\n\n'), 4000))
-          .setFooter({ text: `${r.nonLues} non lue${r.nonLues > 1 ? 's' : ''}${interaction.options.getBoolean('tout_lire') ? ' (maintenant marquées comme lues)' : ''}` })
+          .setFooter({ text: `${r.nonLues} non lue${r.nonLues > 1 ? 's' : ''}${interaction.options.getBoolean('marquer_lues') ? ' (maintenant marquées comme lues)' : ''}` })
       ]
     }
   }

@@ -19,6 +19,7 @@ const commandeEvent = require('../commands/event.js');
 
 const SERVEUR = '1510323842638286890';
 const dansUnAn = () => `${new Date().getUTCFullYear() + 1}-11-06`;
+const dansUnAnJJMMAAAA = () => `06/11/${new Date().getUTCFullYear() + 1}`;
 
 // --- Faux Discord ------------------------------------------------------------------------------------------------------
 
@@ -30,10 +31,12 @@ function fauxServeur(id = SERVEUR) {
 		...donnees,
 		...extra,
 		status: extra.status ?? GuildScheduledEventStatus.Scheduled,
+		creatorId: 'bot',
 		url: `https://discord.com/events/${id}/${extra.id}`,
 	});
 	const guild = {
 		id,
+		client: { user: { id: 'bot' } },
 		scheduledEvents: {
 			async fetch(cle) {
 				if (cle) {
@@ -345,6 +348,118 @@ describe('reflet des événements du site sur Discord', () => {
 	});
 });
 
+// --- Nettoyage : jamais de doublon, jamais d'événement orphelin ------------------------------------------------------------------
+
+describe('nettoyage des événements Discord : orphelins et doublons', () => {
+	let site, serveur, s;
+	const MARQUE = (id) => `Détails, tables et inscription : ${antreReel.urlSite(`/evenements/${id}`)}`;
+	/** Un événement Discord déjà là (créé par le bot lors d'une session précédente, par quelqu'un d'autre…). */
+	const present = (id, extra = {}) => {
+		serveur.evenements.set(id, { id, name: `Ancien ${id}`, creatorId: 'bot', status: GuildScheduledEventStatus.Scheduled, scheduledStartTime: new Date(Date.now() + 86_400_000), description: MARQUE(77), ...extra });
+		return serveur.evenements.get(id);
+	};
+	beforeEach(() => {
+		site = fauxSite();
+		serveur = fauxServeur();
+		s = creerSynchro(site, serveur);
+	});
+
+	it('supprime les événements Discord du bot dont l\'événement du site n\'existe plus (lien perdu : base du bot restaurée, site réinitialisé)', async () => {
+		site.creer({ titre: 'Nouveau' }); // le site a été réinitialisé : un seul événement, d'un numéro que Discord ne connaît pas
+		present('700', { description: MARQUE(77) });
+		present('701', { description: MARQUE(78) });
+		await s.instance.synchroniser(serveur.client);
+		assert.deepEqual([...serveur.evenements.values()].map((e) => e.name), ['Nouveau'], 'seul l\'événement du site reste');
+		assert.equal(serveur.appels.delete, 2);
+		await s.instance.synchroniser(serveur.client);
+		assert.equal(serveur.appels.delete, 2, 'rien de plus aux passages suivants');
+		assert.equal(serveur.appels.create, 1);
+	});
+
+	it('supprime les doublons d\'un même événement du site : garde celui que connaît le bot', async () => {
+		const e = site.creer();
+		await s.instance.synchroniser(serveur.client);
+		const connu = [...serveur.evenements.values()][0].id;
+		present('1', { description: MARQUE(e.id) }); // plus ancien que le connu, mais pas celui du bot
+		present('99999999999999999999', { description: MARQUE(e.id) });
+		await s.instance.synchroniser(serveur.client);
+		assert.deepEqual([...serveur.evenements.keys()], [connu]);
+	});
+
+	it('sans mémoire du lien (base restaurée) : les doublons existants sont réduits à un seul, le plus ancien, qui est repris sans recréation', async () => {
+		const e = site.creer();
+		present('20', { description: MARQUE(e.id), name: 'Le plus récent' });
+		present('10', { description: MARQUE(e.id), name: 'Le plus ancien' });
+		await s.instance.synchroniser(serveur.client);
+		assert.equal(serveur.appels.create, 0, 'repris, pas recréé');
+		assert.equal(serveur.evenements.size, 1);
+		assert.ok(serveur.evenements.has('10') || serveur.evenements.has('20'));
+		await s.instance.synchroniser(serveur.client);
+		await s.instance.synchroniser(serveur.client);
+		assert.equal(serveur.evenements.size, 1, 'reste unique');
+		assert.equal(serveur.appels.create, 0);
+	});
+
+	it('ne touche jamais à ce que le bot n\'a pas créé : événements d\'autres personnes, sans lien du site, ou lien d\'un autre site', async () => {
+		site.creer();
+		present('800', { creatorId: 'quelqu-un-d-autre', description: MARQUE(77) });
+		present('801', { description: 'Soirée créée à la main, sans lien du site' });
+		present('802', { description: 'Détails : https://autre-site.test/evenements/77' });
+		present('803', { description: null });
+		await s.instance.synchroniser(serveur.client);
+		for (const id of ['800', '801', '802', '803']) assert.ok(serveur.evenements.has(id), `événement ${id} intact`);
+		assert.equal(serveur.appels.delete, 0);
+	});
+
+	it('garde un événement du bot dont l\'événement du site existe encore (au-delà des 50 premiers) ; ne supprime rien si le site est injoignable', async () => {
+		const e = site.creer();
+		present('900', { description: MARQUE(e.id) });
+		const liste = site.get.bind(site);
+		site.get = async (chemin) => (chemin === '/bot/evenements' ? { evenements: [] } : liste(chemin));
+		await s.instance.synchroniser(serveur.client);
+		assert.ok(serveur.evenements.has('900'), 'toujours à venir sur le site : gardé');
+
+		present('901', { description: MARQUE(77) }); // n'existe plus… mais le site ne répond pas
+		site.get = async (chemin) => {
+			if (chemin === '/bot/evenements') return { evenements: [] };
+			throw new antreReel.ErreurAntre(500, 'panne', 'Le site est en panne.');
+		};
+		await s.instance.synchroniser(serveur.client);
+		assert.ok(serveur.evenements.has('901'), 'dans le doute, on ne supprime pas');
+		assert.equal(serveur.appels.delete, 0);
+	});
+
+	it('une erreur de suppression sur un événement ne bloque pas les autres', async () => {
+		site.creer();
+		present('1000', { description: MARQUE(77) });
+		present('1001', { description: MARQUE(78) });
+		const supprimer = serveur.guild.scheduledEvents.delete;
+		serveur.guild.scheduledEvents.delete = async (cle) => {
+			if (cle === '1000') throw new Error('Missing Permissions');
+			return supprimer(cle);
+		};
+		await s.instance.synchroniser(serveur.client);
+		assert.ok(serveur.evenements.has('1000'));
+		assert.ok(!serveur.evenements.has('1001'), 'l\'autre est bien supprimé');
+		assert.equal(s.erreurs.length, 1);
+	});
+});
+
+describe('événements trop lointains pour Discord', () => {
+	it('un événement à plus de cinq ans n\'est pas envoyé à Discord (qui le refuserait) et ne produit aucune erreur ; un événement proche l\'est', async () => {
+		const site = fauxSite();
+		const serveur = fauxServeur();
+		const s = creerSynchro(site, serveur);
+		site.creer({ titre: 'Dans six ans', debut: `${new Date().getUTCFullYear() + 6}-01-10T20:00`, fin: `${new Date().getUTCFullYear() + 6}-01-10T23:00` });
+		site.creer({ titre: 'Bientôt' });
+		await s.instance.synchroniser(serveur.client);
+		assert.deepEqual([...serveur.evenements.values()].map((e) => e.name), ['Bientôt']);
+		assert.equal(s.erreurs.length, 0, 'aucune erreur consignée');
+		assert.equal(synchro.dansLHorizon(`${new Date().getUTCFullYear() + 1}-01-10T20:00`), true);
+		assert.equal(synchro.dansLHorizon('2099-01-10T20:00'), false);
+	});
+});
+
 // --- Serveurs concernés ------------------------------------------------------------------------------------------------------------
 
 describe('serveurs qui reflètent les événements du site', () => {
@@ -408,7 +523,7 @@ describe('commandes /event', () => {
 		try {
 			const demain = new Date(Date.now() + 86_400_000);
 			const date = `${String(demain.getUTCDate()).padStart(2, '0')}/${String(demain.getUTCMonth() + 1).padStart(2, '0')}/${demain.getUTCFullYear()}`;
-			const i = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'Soirée Discord', date, heure: '20:00', fin: '02:00', type: 'nocturne', description: 'Venez nombreux', lieu: 'Salle B' } });
+			const i = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'Soirée Discord', date, heure_debut: '20:00', heure_fin: '02:00', type: 'nocturne', description: 'Venez nombreux', lieu: 'Salle B' } });
 			await commandeEvent.execute(i);
 			assert.equal(posts.length, 1);
 			assert.equal(posts[0].chemin, '/evenements');
@@ -430,24 +545,27 @@ describe('commandes /event', () => {
 
 	it('/event create : refuse une date passée ou invalide sans appeler le site, et explique le refus d\'un compte qui n\'est pas modérateur', async () => {
 		try {
-			const passee = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'Trop tard', date: '01/01/2020', heure: '20:00' } });
+			const passee = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'Trop tard', date: '01/01/2020', heure_debut: '20:00' } });
 			await commandeEvent.execute(passee);
 			assert.match(passee.reponses.at(-1).content, /futur/);
-			const invalide = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'x', date: '31/02/2099', heure: '20:00' } });
+			const invalide = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'x', date: '31/02/2099', heure_debut: '20:00' } });
 			await commandeEvent.execute(invalide);
 			assert.match(invalide.reponses.at(-1).content, /invalide/);
+			const tropLoin = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'Trop loin', date: '01/01/2099', heure_debut: '20:00' } });
+			await commandeEvent.execute(tropLoin);
+			assert.match(tropLoin.reponses.at(-1).content, /plus de cinq ans/);
 			assert.equal(posts.length, 0);
 
 			antreReel.post = async () => {
 				throw new antreReel.ErreurAntre(403, 'interdit', 'Accès refusé.');
 			};
-			const refuse = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'Pas moi', date: '01/01/2099', heure: '20:00' } });
+			const refuse = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'Pas moi', date: dansUnAnJJMMAAAA(), heure_debut: '20:00' } });
 			await commandeEvent.execute(refuse);
 			assert.match(refuse.reponses.at(-1).content, /modérateurs et les administrateurs/);
 			antreReel.post = async () => {
 				throw new antreReel.ErreurAntre(401, 'discord_non_lie', '');
 			};
-			const nonLie = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'Pas lié', date: '01/01/2099', heure: '20:00' } });
+			const nonLie = fausseInteraction({ sous: 'create', guild: serveur.guild, client: serveur.client, options: { nom: 'Pas lié', date: dansUnAnJJMMAAAA(), heure_debut: '20:00' } });
 			await commandeEvent.execute(nonLie);
 			assert.match(nonLie.reponses.at(-1).content, /\/antre lier/);
 			assert.equal(serveur.appels.create, 0);
@@ -488,15 +606,18 @@ describe('commandes /event', () => {
 		}
 	});
 
-	it('un événement à tables sans table affiche « 0 table · 0 intéressé » ; « venez simplement » reste pour les événements sans tables', async () => {
+	it('un événement de jeu de rôle sans table affiche « 0 table · 0 intéressé » ; un événement qui n\'a pas de tables (échecs…) n\'a aucune ligne de tables', async () => {
 		try {
 			site.creer({ titre: 'Initiation vide', categorie: 'jdr' });
-			site.creer({ titre: 'Séance d\'échecs', categorie: 'echecs', type: 'echecs' });
+			site.creer({ titre: 'Séance d\'échecs', categorie: 'echecs', type: 'echecs', lieu: 'Salle Agnodice' });
 			const liste = fausseInteraction({ sous: 'list', guild: serveur.guild, client: serveur.client });
 			await commandeEvent.execute(liste);
 			const champs = liste.reponses.at(-1).embeds[0].toJSON().fields;
 			assert.ok(champs.find((f) => f.name.includes('Initiation vide')).value.includes('0 table · 0 intéressé'));
-			assert.ok(champs.find((f) => f.name.includes('échecs')).value.includes('Pas de table : venez simplement.'));
+			const echecs = champs.find((f) => f.name.includes('échecs')).value;
+			assert.ok(!/table|venez simplement/i.test(echecs), `aucune mention de table pour les échecs : ${echecs}`);
+			assert.ok(!echecs.includes('\n\n') && !echecs.startsWith('\n'), 'pas de ligne vide à la place');
+			assert.match(echecs, /^Salle Agnodice\n\[Voir sur le site\]\(/, 'le lieu puis le lien, rien entre les deux');
 		} finally {
 			restaurer();
 		}

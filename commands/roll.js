@@ -1,5 +1,10 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const crypto = require('crypto');
+const { couper } = require('../utils/utils.js');
+
+const MAX_DES = 100;
+const MAX_FACES = 1_000_000;
+const MAX_CHIFFRES_MODIFICATEUR = 9;
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -15,7 +20,8 @@ module.exports = {
     const formula = interaction.options.getString('formule').replace(/\s+/g, '').toLowerCase();
     const terms = formula.match(/[+-]?[^+-]+/g);
 
-    if (!terms) {
+    // Tout ce qui est tapé doit être compris : un « + » qui traîne ou un « -- » ne sont pas ignorés en silence
+    if (!terms || terms.join('') !== formula) {
         return interaction.reply({ content: "❌ Formule invalide.", ephemeral: true });
     }
 
@@ -52,16 +58,24 @@ module.exports = {
         }
 
         if (cleanTerm.includes('d')) {
+            // Après retrait des marques (!, i, kh, kl) il ne doit rester que « [nombre]d[faces] » (« 1d6x » ou « 1d6/roll » ne passent pas)
+            if (!/^\d*d\d+$/.test(cleanTerm)) {
+                return interaction.reply({ content: `❌ Format de dé invalide : \`${term}\``, ephemeral: true });
+            }
             const [countStr, facesStr] = cleanTerm.split('d');
             const count = countStr === '' ? 1 : parseInt(countStr);
             const faces = parseInt(facesStr);
 
             if (isNaN(count) || isNaN(faces) || faces <= 0 || count <= 0) {
-                return interaction.reply({ content: `❌ Format de dé invalide : \`${cleanTerm}\``, ephemeral: true });
+                return interaction.reply({ content: `❌ Format de dé invalide : \`${term}\``, ephemeral: true });
             }
-            
-            if (count > 100) {
-                return interaction.reply({ content: `❌ Tu ne peux pas lancer plus de 100 dés d'un coup !`, ephemeral: true });
+
+            if (count > MAX_DES) {
+                return interaction.reply({ content: `❌ Tu ne peux pas lancer plus de ${MAX_DES} dés d'un coup !`, ephemeral: true });
+            }
+
+            if (faces > MAX_FACES) {
+                return interaction.reply({ content: `❌ Un dé ne peut pas avoir plus de ${MAX_FACES.toLocaleString('fr-FR')} faces !`, ephemeral: true });
             }
 
             let diceGroups = [];
@@ -163,10 +177,10 @@ module.exports = {
             detailsText.push(`${signStr}${displayTerm} ([${rollsTextArray.join('], [')}])`);
 
         } else {
-            const modifier = parseInt(cleanTerm);
-            if (isNaN(modifier)) {
-                return interaction.reply({ content: `❌ Modificateur invalide : \`${cleanTerm}\``, ephemeral: true });
+            if (!/^\d+$/.test(cleanTerm) || cleanTerm.length > MAX_CHIFFRES_MODIFICATEUR) {
+                return interaction.reply({ content: `❌ Modificateur invalide : \`${term}\``, ephemeral: true });
             }
+            const modifier = parseInt(cleanTerm);
 
             total += modifier * signMultiplier;
             const signStr = term.charAt(0) === '-' ? '- ' : (detailsText.length > 0 ? '+ ' : '');
@@ -182,7 +196,8 @@ module.exports = {
         })
         .setTitle(`Formule : \`${formula}\``)
         .addFields(
-            { name: 'Détails des jets', value: detailsText.join(' ') || 'Aucun détail' },
+            // Un champ d'embed ne dépasse pas 1024 caractères : plusieurs centaines de dés ne tiendraient pas
+            { name: 'Détails des jets', value: couper(detailsText.join(' '), 1024) || 'Aucun détail' },
             { name: 'Total', value: `**${total}**` }
         )
         .setTimestamp()

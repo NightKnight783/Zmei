@@ -1,11 +1,13 @@
 const { EmbedBuilder, Colors, Events } = require('discord.js')
 const { getGuildConfig } = require('../utils/constants.js');
+const { couper } = require('../utils/utils.js');
 module.exports = {
     name: Events.MessageUpdate,
     once: false,
     async execute(oldMessage, newMessage) {
         if (oldMessage.partial) return;
         if (oldMessage.author?.bot) return;
+        if (!oldMessage.guild) return; // message privé : pas de serveur, pas de salon de logs
 
         if (oldMessage.content === newMessage.content) return;
 
@@ -22,8 +24,9 @@ module.exports = {
             })
             .setDescription(`Dans le salon ${oldMessage.channel}`)
             .addFields(
-                { name: 'Ancien contenu :', value: oldMessage.content || '*Vide ou média*' },
-                { name: 'Nouveau contenu :', value: newMessage.content || '*Vide ou média*' }
+                // Un champ d'embed ne dépasse pas 1024 caractères, un message peut en avoir bien plus
+                { name: 'Ancien contenu :', value: couper(oldMessage.content || '*Vide ou média*', 1024) },
+                { name: 'Nouveau contenu :', value: couper(newMessage.content || '*Vide ou média*', 1024) }
             )
             .setTimestamp()
             .setFooter({ text: `ID du Message : ${oldMessage.id}` });

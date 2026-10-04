@@ -2,6 +2,20 @@
 
 Bot Discord de l'association ANTRE : modération, niveaux, événements du serveur, et lien avec le site de l'association.
 
+## Commandes du serveur
+
+| Commande | Rôle | Qui la voit |
+| --- | --- | --- |
+| `/ping` · `/roll` · `/level` · `/leaderboard` · `/help` | dés (`2d20`, `4d6!+2`, `2d20kl1`, `1d10i`…), niveau et classement d'xp, aide | tout le monde |
+| `/warn` · `/mute` · `/unmute` · `/kick` · `/ban` · `/unban` · `/voicemute` · `/voiceunmute` | modération ; chaque sanction est gardée (`/inspect`, `/sanction-remove`), annoncée à la personne en message privé et écrite dans le salon de logs | selon les permissions Discord (Modérer, Exclure, Expulser, Bannir, Couper le micro) |
+| `/inspect` · `/sanction-remove` | historique des sanctions d'un membre (10 par page), suppression d'une sanction par son numéro | Modérer les membres |
+| `/clear` · `/embed` | supprimer les derniers messages (1 à 100), publier un message en « embed » | Gérer les messages |
+| `/setup-roles` | publie le menu où chacun choisit ses pôles (rôles Jeu vidéo, Wargame, Échecs, MJ) | Gérer les rôles |
+
+**`/help` n'affiche que les commandes auxquelles la personne a accès** : une commande n'est listée que si ses permissions Discord (celles que la commande exige) le permettent, et `/event` ne détaille la création d'événement qu'avec la permission « Gérer les événements ». Un membre ordinaire ne voit donc ni la modération, ni `/embed`, ni `/setup-roles`.
+
+**Fonctions automatiques** : gain d'xp à chaque message (20 à 50, au plus toutes les 15 secondes, niveaux jusqu'à 100) ; réaction 🐾 quand on mentionne le bot ; **logs** dans le salon de logs du serveur (message modifié, message supprimé avec ses pièces jointes si elles ont pu être gardées, connexions, déconnexions et changements de salon vocal) ; **salons vocaux temporaires** (rejoindre « Crée ton salon » crée un salon au nom du membre, supprimé quand il est vide). Les commandes qui échouent (rôle du bot trop bas, permission manquante…) répondent par un message clair au lieu de rester sans réponse.
+
 ## Lien avec le site de l'association (ANTRE-App)
 
 Le bot peut parler au site (événements, campagnes, notifications) au nom d'un membre qui a **lié son compte Discord à son compte du site**.
@@ -34,7 +48,7 @@ Dans `config.json` (jamais versionné) :
 | --- | --- |
 | `/antre lier` · `/antre delier` · `/antre moi` | liaison du compte, état |
 | `/antre evenements` | prochains événements et leurs tables |
-| `/antre campagnes` | campagnes en cours (`mes:true` : les miennes) |
+| `/antre campagnes` | campagnes en cours (`inscrites:true` : seulement celles où je suis inscrit(e)) |
 | `/antre notifications` | ses notifications du site |
 | `/event create` | créer un événement : il est créé **sur le site** (au nom du compte lié, qui doit être modérateur ou administrateur du site) puis ici |
 | `/event list` · `/event info` | les événements du site ; `info` : dates, lieu, tables (jeu, MJ) et nombre de joueurs |
@@ -51,10 +65,11 @@ Le **site est la source de vérité** : chaque événement créé, modifié ou s
 
 - Le site prévient le bot par la connexion permanente (signal `evenements`, identifiants seulement) ; une relève de secours toutes les 5 minutes rattrape une coupure.
 - Le lien site ↔ Discord est gardé dans la base du bot (table `antre_evenements`). Un événement Discord qui existe déjà et dont le texte contient l'adresse de sa page du site est repris, pas recréé.
+- **Jamais de doublon, jamais d'orphelin** : à chaque passe (démarrage, signal du site, relève de secours), le bot retire les événements Discord **qu'il a lui-même créés** (et dont le texte pointe vers une page de ce site) dont l'événement du site n'existe plus, et les doublons d'un même événement du site (il garde celui qu'il connaît, sinon le plus ancien). Cela répare tout seul un lien perdu (base du bot restaurée, site réinitialisé, deux bots à la fois). Les événements créés à la main ou par quelqu'un d'autre ne sont jamais touchés, et en cas de doute (site injoignable) rien n'est supprimé.
 - Un événement Discord **supprimé à la main** n'est pas recréé tant que l'événement existe sur le site. Un événement déjà commencé n'est pas créé (Discord refuse de programmer dans le passé) ; un événement en cours garde son heure de début.
 - Le bot a besoin des permissions **Gérer les événements** et **Créer des événements** sur le serveur.
 - **Par serveur** : seuls les serveurs marqués `evenementsAntre: true` dans `utils/constants.js` reflètent les événements du site (pour l'instant le serveur de test). Les autres gardent leurs événements Discord à eux, et `/event create` / `/event list` y fonctionnent comme avant (sans le site).
-- `npm test` lance les tests du bot (faux serveur Discord et faux site, aucun accès réseau).
+- `npm test` lance les tests du bot (130 : modération, dés, niveaux, aide, rôles, logs, salons vocaux, synchronisation des événements ; faux serveur Discord et faux site, aucun accès réseau).
 
 ### Notifications en message privé
 

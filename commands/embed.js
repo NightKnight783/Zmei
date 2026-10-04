@@ -8,11 +8,13 @@ module.exports = {
     .addStringOption(option =>
       option.setName('titre')
         .setDescription('Le titre de l\'embed')
+        .setMaxLength(256) // limites de Discord pour un embed
         .setRequired(false)
     )
     .addStringOption(option =>
       option.setName('description')
         .setDescription('La description de l\'embed (tapez \\n pour faire un retour à la ligne)')
+        .setMaxLength(4096)
         .setRequired(false)
     )
     .addStringOption(option =>
@@ -26,13 +28,14 @@ module.exports = {
         .setRequired(false)
     )
     .addStringOption(option =>
-      option.setName('thumbnail')
+      option.setName('miniature')
         .setDescription('L\'URL d\'une petite image à afficher en haut à droite')
         .setRequired(false)
     )
     .addStringOption(option =>
-      option.setName('footer')
+      option.setName('pied_de_page')
         .setDescription('Le texte du pied de page')
+        .setMaxLength(2048)
         .setRequired(false)
     ),
 
@@ -41,8 +44,8 @@ module.exports = {
     const description = interaction.options.getString('description');
     const color = interaction.options.getString('couleur');
     const image = interaction.options.getString('image');
-    const thumbnail = interaction.options.getString('thumbnail');
-    const footer = interaction.options.getString('footer');
+    const thumbnail = interaction.options.getString('miniature');
+    const footer = interaction.options.getString('pied_de_page');
 
     // Vérification : il faut au moins un élément affichable
     if (!title && !description && !image) {
@@ -59,7 +62,7 @@ module.exports = {
     if (footer) embed.setFooter({ text: footer });
 
     if (image) {
-        if (image.startsWith('http')) {
+        if (/^https?:\/\//i.test(image)) {
             embed.setImage(image);
         } else {
             return interaction.reply({ content: '❌ L\'URL de l\'image est invalide. Elle doit commencer par http/https.', ephemeral: true });
@@ -67,7 +70,7 @@ module.exports = {
     }
 
     if (thumbnail) {
-        if (thumbnail.startsWith('http')) {
+        if (/^https?:\/\//i.test(thumbnail)) {
             embed.setThumbnail(thumbnail);
         } else {
             return interaction.reply({ content: '❌ L\'URL du thumbnail est invalide. Elle doit commencer par http/https.', ephemeral: true });

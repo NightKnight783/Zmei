@@ -18,7 +18,7 @@ module.exports = {
 
         if (!value) {
           // Create user in Database if not exist
-          db.run('INSERT into data (userId, userName, xpCooldown) values (?, ?, ?)', [interaction.user.id, interaction.user.globalName, Date.now()])
+          db.run('INSERT OR IGNORE INTO data (userId, userName, xpCooldown) values (?, ?, ?)', [interaction.user.id, interaction.user.displayName ?? interaction.user.globalName ?? interaction.user.username, Date.now()])
 
           const embed = new EmbedBuilder()
             .setColor(Colors.Blue)

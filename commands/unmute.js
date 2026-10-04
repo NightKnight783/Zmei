@@ -17,15 +17,15 @@ module.exports = {
       option
         .setName('raison')
         .setRequired(false)
+        .setMaxLength(512)
         .setDescription('La raison du démute')
     ),
   async execute (interaction) {
     const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
-    const member = server.members.cache.get(interaction.user.id)
 
-    if (!member.permissions.has(PermissionsBitField.Flags.MuteMembers)) {
+    if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.MuteMembers)) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)

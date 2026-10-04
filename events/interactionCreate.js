@@ -1,6 +1,21 @@
 const { Events } = require('discord.js')
 const { getGuildConfig } = require('../utils/constants.js')
 
+const MESSAGE_ERREUR = {
+  content: '❌ Une erreur est survenue en exécutant cette commande. Si cela se répète, prévenez le staff (le rôle ou les permissions du bot sont peut-être en cause).',
+  ephemeral: true
+}
+
+/** Une commande qui échoue répond quand même : sans cela, Discord affiche « L'application ne répond plus » sans autre explication. */
+async function repondreErreur (interaction) {
+  try {
+    if (interaction.deferred || interaction.replied) await interaction.followUp(MESSAGE_ERREUR)
+    else await interaction.reply(MESSAGE_ERREUR)
+  } catch {
+    // L'interaction a expiré (plus de trois secondes sans réponse) : rien d'autre à faire
+  }
+}
+
 module.exports = {
   name: Events.InteractionCreate,
   once: false,
@@ -18,6 +33,7 @@ module.exports = {
       } catch (error) {
         console.error(`Error executing ${interaction.commandName}`)
         console.error(error)
+        await repondreErreur(interaction)
       }
     } else if (interaction.isAutocomplete()) {
       // Saisie semi-automatique (listes de choix des commandes /antre et /event)
@@ -36,6 +52,7 @@ module.exports = {
         await command.bouton(interaction)
       } catch (error) {
         console.error(`Bouton ${interaction.customId}`, error)
+        await repondreErreur(interaction)
       }
     } else if (interaction.isModalSubmit()) {
       // Fenêtres de saisie : l'identifiant commence par le nom de la commande (« antre_lier » pour /antre)
@@ -45,6 +62,7 @@ module.exports = {
         await command.modal(interaction)
       } catch (error) {
         console.error(`Fenêtre ${interaction.customId}`, error)
+        await repondreErreur(interaction)
       }
     } else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'pole_role_select') {

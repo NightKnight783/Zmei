@@ -17,15 +17,15 @@ module.exports = {
       option
         .setName('raison')
         .setRequired(false)
+        .setMaxLength(512) // limite de Discord pour la raison inscrite au journal du serveur
         .setDescription('La raison du banissement')
     ),
   async execute (interaction) {
     const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
-    const member = server.members.cache.get(interaction.user.id)
 
-    if (!member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+    if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.BanMembers)) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)
@@ -38,7 +38,7 @@ module.exports = {
     const memberToBan = interaction.options.getUser('membre')
     const reason = interaction.options.getString('raison') || 'Aucune raison donnée'
 
-    if (testStaff(memberToBan, interaction)) { return }
+    if (await testStaff(memberToBan, interaction)) { return }
 
     const mpEmbed = new EmbedBuilder()
       .setColor(Colors.Red)
@@ -46,13 +46,18 @@ module.exports = {
       .setTitle(`Vous avez été banni du serveur ${server.name}`)
       .setDescription(`Raison: [${reason}]`)
 
-    try {
-      await memberToBan.send({ embeds: [mpEmbed] })
-    } catch (error) {
-      // L'utilisateur a ses MPs fermés, on ignore
-    }
+    // Le message privé part avant le bannissement (ensuite plus aucun serveur en commun) ; s'il échoue (MP fermés), on ignore
+    const mp = await memberToBan.send({ embeds: [mpEmbed] }).catch(() => null)
 
-    await server.bans.create(memberToBan.id, { reason })
+    try {
+      await server.bans.create(memberToBan.id, { reason })
+    } catch (error) {
+      // Rôle du membre au-dessus de celui du bot, propriétaire du serveur, permission manquante… : on retire le message qui annonçait le bannissement
+      await mp?.delete().catch(() => {})
+      console.error('Erreur /ban', error)
+      await interaction.reply({ content: `❌ Je n'ai pas pu bannir ${memberToBan.displayName}. Mon rôle est-il bien au-dessus du sien, et ai-je la permission « Bannir des membres » ?`, ephemeral: true })
+      return
+    }
 
     await addSanction(memberToBan.id, memberToBan.displayName, {
       type: 'Ban',

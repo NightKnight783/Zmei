@@ -17,16 +17,16 @@ module.exports = {
       option
         .setName('raison')
         .setRequired(false)
+        .setMaxLength(512)
         .setDescription('La raison de la coupure micro')
     ),
   async execute (interaction) {
     const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
-    const targetMember = server.members.cache.get(interaction.user.id)
 
     // Vérification des permissions du modérateur
-    if (!targetMember.permissions.has(PermissionsBitField.Flags.MuteMembers)) {
+    if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.MuteMembers)) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)
@@ -40,7 +40,7 @@ module.exports = {
     const reason = interaction.options.getString('raison') || 'Aucune raison donnée'
 
     // Protection du staff
-    if (testStaff(userToMute, interaction)) { return }
+    if (await testStaff(userToMute, interaction)) { return }
 
     // Récupération du membre ciblé pour vérifier son état vocal
     const member = await server.members.fetch(userToMute.id).catch(() => null)
@@ -54,8 +54,9 @@ module.exports = {
       return
     }
 
-    // Vérification si le membre est DÉJÀ mute
-    if (member.voice.mute) {
+    // Vérification si le membre est DÉJÀ mute par le serveur (`voice.mute` compterait aussi le micro qu'il a lui-même coupé : on peut
+    // pourtant le mettre en sourdine côté serveur, il ne pourra alors plus le rouvrir)
+    if (member.voice.serverMute) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)

@@ -54,12 +54,14 @@ const getEmbedAuthor = (user) => ({
  *
  * @param {object} user - L'objet utilisateur Discord ciblé.
  * @param {object} interaction - L'objet interaction de la commande.
- * @returns {boolean} `true` si l'utilisateur est membre du staff, `undefined` sinon.
+ * @returns {Promise<boolean>} `true` si l'utilisateur est membre du staff (la réponse est alors déjà envoyée), `false` sinon.
  */
-const testStaff = (user, interaction) => {
+const testStaff = async (user, interaction) => {
   const author = getEmbedAuthor(interaction.user);
 
-  const member = interaction.guild.members.cache.get(user.id);
+  // Hors du cache (membre hors ligne d'un grand serveur) on le demande à Discord ; absent du serveur : pas de rôle à protéger
+  const member = interaction.guild.members.cache.get(user.id) ?? await interaction.guild.members.fetch(user.id).catch(() => null);
+  if (!member) return false;
   const consts = getGuildConfig(interaction.guild.id);
 
   if (member.roles.cache.has(consts.roleBureau) ||
@@ -70,15 +72,27 @@ const testStaff = (user, interaction) => {
       .setAuthor(author)
       .setTitle('Désolé, cet utilisateur est membre du staff, je ne peux pas faire cela!');
 
-    interaction.reply({embeds: [embed]});
+    await interaction.reply({embeds: [embed]});
 
     return true;
   }
+
+  return false;
 };
+
+/**
+ * Coupe un texte à `max` caractères (Discord limite les champs, titres et descriptions des embeds).
+ *
+ * @param {string} texte
+ * @param {number} max
+ * @returns {string}
+ */
+const couper = (texte, max) => (texte.length > max ? `${texte.slice(0, max - 1)}…` : texte);
 
 module.exports = {
   getRandomInt,
   getMedal,
   getEmbedAuthor,
-  testStaff
+  testStaff,
+  couper
 };

@@ -18,9 +18,8 @@ module.exports = {
     const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
-    const targetMember = server.members.cache.get(interaction.user.id)
 
-    if (!targetMember.permissions.has(PermissionsBitField.Flags.MuteMembers)) {
+    if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.MuteMembers)) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)
@@ -44,12 +43,12 @@ module.exports = {
       return
     }
 
-    // Vérification si le membre n'est PAS mute (déjà actif)
-    if (!member.voice.mute) {
+    // Vérification si le membre n'est PAS mute par le serveur (`voice.mute` compterait aussi le micro qu'il a lui-même coupé : rien à rétablir)
+    if (!member.voice.serverMute) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)
-        .setTitle(`Le micro de ${userToUnmute.displayName} n'est pas coupé.`)
+        .setTitle(`Le micro de ${userToUnmute.displayName} n'est pas coupé par le serveur.`)
 
       await interaction.reply({ embeds: [embed], ephemeral: true })
       return

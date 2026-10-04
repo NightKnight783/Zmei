@@ -55,7 +55,7 @@ const nomEvenement = (e) => antre.couper(`${antre.dateEvenement(e.debut)} — ${
 const nomTable = (t) => antre.couper(`${t.titre || t.jeu}${t.titre ? ` (${t.jeu})` : ''} — ${t.mj}${t.cloturee ? ' · inscriptions closes' : ''}`, 100)
 
 const pluriel = (n, un, plusieurs = `${un}s`) => `${n} ${n > 1 ? plusieurs : un}`
-/** Les catégories d'événements du site qui proposent des tables (les autres : « venez simplement »). */
+/** Les catégories d'événements du site qui proposent des tables (les autres : rien à dire des tables dans les listes). */
 const CATEGORIES_A_TABLES = new Set(['jdr', 'jds'])
 
 // --- Fiches ---------------------------------------------------------------------------------------------------------------------
@@ -68,12 +68,12 @@ function plage (debut, fin) {
   return `${antre.dateEvenement(debut)} → ${memeJour ? `${Number(h)}h${m}` : antre.dateEvenement(fin)}`
 }
 
-/** Une ligne sur ce que l'événement propose : tables et intéressés, ou « venez simplement ». */
+/** Une ligne sur ce que l'événement propose : tables et intéressés. Rien (chaîne vide) pour un événement qui n'a pas de tables par nature. */
 function resumeTables (e) {
   const tables = e.tables ?? []
-  // Un événement qui propose des tables (jeux de rôle, jeux de société) sans table pour l'instant affiche « 0 table » : rien qui laisse
-  // croire qu'on ne peut pas encore s'inscrire. « Venez simplement » est réservé aux événements sans tables (échecs, autres associations).
-  if (!tables.length) return CATEGORIES_A_TABLES.has(e.categorie) ? `${pluriel(0, 'table')} · ${pluriel(e.nbInteresses ?? 0, 'intéressé')}` : 'Pas de table : venez simplement.'
+  // Un événement qui propose des tables (jeux de rôle, jeux de société) sans table pour l'instant affiche « 0 table · 0 intéressé » : rien qui
+  // laisse croire qu'on ne peut pas encore s'inscrire. Les autres (échecs, autres associations) n'ont pas de tables : pas de ligne du tout.
+  if (!tables.length) return CATEGORIES_A_TABLES.has(e.categorie) ? `${pluriel(0, 'table')} · ${pluriel(e.nbInteresses ?? 0, 'intéressé')}` : ''
   return `${pluriel(tables.length, 'table')} · ${pluriel(e.nbInteresses, 'intéressé')}`
 }
 
@@ -83,11 +83,11 @@ function embedListe (liste, { titre = '📅 Prochains événements', limite = 8 
   for (const e of liste.slice(0, limite)) {
     embed.addFields({
       name: antre.couper(antre.neutraliser(`${antre.dateEvenement(e.debut)} — ${e.titre}`), 256),
-      value: antre.couper(`${e.lieu ? `${antre.neutraliser(e.lieu)}\n` : ''}${resumeTables(e)}\n[Voir sur le site](${antre.urlSite(`/evenements/${e.id}`)})`, 1024)
+      value: antre.couper([e.lieu ? antre.neutraliser(e.lieu) : '', resumeTables(e), `[Voir sur le site](${antre.urlSite(`/evenements/${e.id}`)})`].filter(Boolean).join('\n'), 1024)
     })
   }
   if (liste.length > limite) embed.setDescription(`Et ${pluriel(liste.length - limite, 'autre')} sur le [site](${antre.urlSite('/evenements')}).`)
-  embed.setFooter({ text: "Dire quelle table vous intéresse n'est pas une réservation : la répartition se fait sur place. — /antre interet" })
+  embed.setFooter({ text: "Dire sur le site quelle table vous intéresse n'est pas une réservation : la répartition se fait sur place." })
   return embed
 }
 

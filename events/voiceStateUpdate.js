@@ -9,11 +9,60 @@ module.exports = {
 
         const guildId = newState.guild ? newState.guild.id : oldState.guild.id;
         const { logChannel, createVoiceChannelId, tempVoiceCategoryId } = getGuildConfig(guildId);
-        
+
+        // Instantané de ce qui s'est passé. `newState` est mis à jour sur place par le changement suivant (par exemple celui que provoque
+        // le déplacement dans un salon dynamique, plus bas) : lu plus tard, il décrirait un autre événement.
+        const idAvant = oldState.channelId;
+        const idApres = newState.channelId;
+        const salonAvant = oldState.channel;
+        const salonApres = newState.channel;
+
+        // --- LOGS (d'abord : dans l'ordre où les choses se passent, et avant qu'un salon temporaire ne soit supprimé) ---
+
+        // Un salon temporaire disparaît : sa mention deviendrait « #inconnu », on écrit donc son nom
+        const decrire = (salon) => {
+            if (!salon) return '*un salon inconnu*';
+            return salon.parentId === tempVoiceCategoryId ? `**${salon.name}**` : `${salon}`;
+        };
+
+        const channel = newState.client.channels.cache.get(logChannel);
+        if (!channel) {
+            console.log("[Logs] Salon de logs introuvable pour le vocal.");
+        } else {
+            const embed = new EmbedBuilder()
+                .setAuthor({
+                    name: member.user.tag,
+                    iconURL: member.user.displayAvatarURL({ dynamic: true })
+                })
+                .setTimestamp();
+
+            if (!idAvant && idApres) {
+                // Cas 1 : L'utilisateur se connecte à un salon vocal
+                embed.setTitle('🟢 Connexion Vocale')
+                     .setColor(Colors.Green) // Vert
+                     .setDescription(`${member} a rejoint le salon vocal ${decrire(salonApres)}.`);
+            } else if (idAvant && !idApres) {
+                // Cas 2 : L'utilisateur quitte complètement les salons vocaux
+                embed.setTitle('🔴 Déconnexion Vocale')
+                     .setColor(Colors.Red) // Rouge
+                     .setDescription(`${member} a quitté le salon vocal ${decrire(salonAvant)}.`);
+            } else if (idAvant && idApres && idAvant !== idApres) {
+                // Cas 3 : L'utilisateur change de salon vocal
+                embed.setTitle('🔀 Changement de Salon')
+                     .setColor(Colors.Blue) // Bleu
+                     .setDescription(`${member} a migré de ${decrire(salonAvant)} vers ${decrire(salonApres)}.`);
+            } else {
+                // Cas 4 : Autre chose (Mute, Deafen, Stream...), on ne logge pas pour éviter le spam
+                embed.setTitle(null);
+            }
+
+            if (embed.data.title) await channel.send({ embeds: [embed] });
+        }
+
         // --- GESTION DES SALONS VOCAUX DYNAMIQUES ---
-        
+
         // 1. Création d'un salon si l'utilisateur rejoint le "Salon de Création"
-        if (newState.channelId === createVoiceChannelId && createVoiceChannelId && tempVoiceCategoryId) {
+        if (idApres === createVoiceChannelId && createVoiceChannelId && tempVoiceCategoryId) {
             try {
                 const newChannel = await newState.guild.channels.create({
                     name: `Salon de ${member.user.username}`,
@@ -31,7 +80,7 @@ module.exports = {
                         }
                     ]
                 });
-                
+
                 // Déplacer le membre dans le nouveau salon
                 await member.voice.setChannel(newChannel);
             } catch (error) {
@@ -40,8 +89,8 @@ module.exports = {
         }
 
         // 2. Suppression d'un salon dynamique s'il devient vide
-        if (oldState.channelId) {
-            const oldChannel = oldState.channel;
+        if (idAvant) {
+            const oldChannel = salonAvant;
             // Si le salon est vide, qu'il est dans la catégorie temporaire et que ce n'est pas le salon de création
             if (oldChannel && oldChannel.members.size === 0 && oldChannel.parentId === tempVoiceCategoryId && oldChannel.id !== createVoiceChannelId) {
                 try {
@@ -53,43 +102,5 @@ module.exports = {
         }
 
         // --- FIN GESTION DES SALONS VOCAUX DYNAMIQUES ---
-
-        const channel = newState.client.channels.cache.get(logChannel);
-        if (!channel) return console.log("[Logs] Salon de logs introuvable pour le vocal.");
-
-        const embed = new EmbedBuilder()
-            .setAuthor({ 
-                name: member.user.tag, 
-                iconURL: member.user.displayAvatarURL({ dynamic: true }) 
-            })
-            .setTimestamp();
-
-        // Cas 1 : L'utilisateur se connecte à un salon vocal
-        if (!oldState.channelId && newState.channelId) {
-            embed.setTitle('🟢 Connexion Vocale')
-                 .setColor(Colors.Green) // Vert
-                 .setDescription(`${member} a rejoint le salon vocal **${newState.channel}**.`);
-        }
-        
-        // Cas 2 : L'utilisateur quitte complètement les salons vocaux
-        else if (oldState.channelId && !newState.channelId) {
-            embed.setTitle('🔴 Déconnexion Vocale')
-                 .setColor(Colors.Red) // Rouge
-                 .setDescription(`${member} a quitté le salon vocal **${oldState.channel}**.`);
-        }
-        
-        // Cas 3 : L'utilisateur change de salon vocal
-        else if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId) {
-            embed.setTitle('🔀 Changement de Salon')
-                 .setColor(Colors.Blue) // Bleu
-                 .setDescription(`${member} a migré de **${oldState.channel}** vers **${newState.channel}**.`);
-        } 
-        
-        // Cas 4 : Autre chose (Mute, Deafen, Stream...), on ne logge pas pour éviter le spam
-        else {
-            return; 
-        }
-
-        await channel.send({ embeds: [embed] });
     }
 };

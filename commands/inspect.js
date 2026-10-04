@@ -17,7 +17,7 @@ const buildEmbed = (author, userToCheck, server, sanctions, page, totalPages) =>
   for (const sanct of pageItems) {
     const moderator = server.members.cache.get(sanct.moderator)
     embed.addFields({
-      name: `#${sanct.numero} · ${sanct.type} <t:${Math.floor(sanct.date / 1000)}> par ${moderator ? moderator.displayName : 'Erreur'}${sanct.time ? ' pendant ' + sanct.time : ''}`,
+      name: `#${sanct.numero} · ${sanct.type} <t:${Math.floor(sanct.date / 1000)}> par ${moderator ? moderator.displayName : 'un modérateur parti'}${sanct.time ? ' pendant ' + sanct.time : ''}`,
       value: `Raison: [${sanct.reason}]`
     })
   }

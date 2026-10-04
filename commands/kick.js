@@ -17,15 +17,15 @@ module.exports = {
       option
         .setName('raison')
         .setRequired(false)
+        .setMaxLength(512) // limite de Discord pour la raison inscrite au journal du serveur
         .setDescription('La raison du kick')
     ),
   async execute (interaction) {
     const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
-    const member = server.members.cache.get(interaction.user.id)
 
-    if (!member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
+    if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.KickMembers)) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)
@@ -38,9 +38,18 @@ module.exports = {
     const userToKick = interaction.options.getUser('membre')
     const reason = interaction.options.getString('raison') || 'Aucune raison donnée'
 
-    const memberToKick = server.members.cache.get(userToKick.id)
+    const memberToKick = await server.members.fetch(userToKick.id).catch(() => null)
+    if (!memberToKick) {
+      const embed = new EmbedBuilder()
+        .setColor(Colors.Red)
+        .setAuthor(author)
+        .setTitle(`Le membre ${userToKick.displayName} n'est plus sur le serveur.`)
 
-    if (testStaff(userToKick, interaction)) { return }
+      await interaction.reply({ embeds: [embed], ephemeral: true })
+      return
+    }
+
+    if (await testStaff(userToKick, interaction)) { return }
 
     const mpEmbed = new EmbedBuilder()
       .setColor(Colors.Red)
@@ -48,13 +57,18 @@ module.exports = {
       .setTitle(`Vous avez été kick du serveur ${server.name}`)
       .setDescription(`Raison: [${reason}]`)
 
-    try {
-      await memberToKick.send({ embeds: [mpEmbed] })
-    } catch (error) {
-      // L'utilisateur a ses MPs fermés, on ignore
-    }
+    // Le message privé part avant l'expulsion (ensuite plus aucun serveur en commun) ; s'il échoue (MP fermés), on ignore
+    const mp = await memberToKick.send({ embeds: [mpEmbed] }).catch(() => null)
 
-    await memberToKick.kick(reason)
+    try {
+      await memberToKick.kick(reason)
+    } catch (error) {
+      // Rôle du membre au-dessus de celui du bot, propriétaire du serveur, permission manquante… : on retire le message qui annonçait l'expulsion
+      await mp?.delete().catch(() => {})
+      console.error('Erreur /kick', error)
+      await interaction.reply({ content: `❌ Je n'ai pas pu expulser ${userToKick.displayName}. Mon rôle est-il bien au-dessus du sien, et ai-je la permission « Expulser des membres » ?`, ephemeral: true })
+      return
+    }
 
     await addSanction(userToKick.id, userToKick.displayName, {
       type: 'Kick',

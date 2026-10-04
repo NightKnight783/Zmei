@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js')
+const { SlashCommandBuilder, EmbedBuilder, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, PermissionFlagsBits } = require('discord.js')
 
 const COLLECTOR_TIME = 5 * 60 * 1000 // 5 minutes
 
@@ -30,10 +30,30 @@ const buildXpEmbed = () => new EmbedBuilder()
     '`/leaderboard` — Voir le classement des membres les plus actifs.'
   )
 
+/**
+ * Une commande est proposée à qui a la permission Discord qu'elle exige (`setDefaultMemberPermissions`) : un membre ordinaire ne voit
+ * donc pas les commandes de modération, comme dans la liste des commandes de Discord. Sans exigence, la commande est ouverte à tous.
+ */
+const peutUtiliser = (interaction, commande) => {
+  const requis = commande.data.default_member_permissions
+  if (requis === undefined || requis === null) return true
+  return interaction.memberPermissions?.has(BigInt(requis)) ?? false
+}
+
+/** `/event` : tout le monde consulte les événements, mais seuls ceux qui ont la permission Discord « Gérer les événements » en créent. */
+const ligneCommande = (interaction, commande) => {
+  const nom = commande.data.name
+  if (nom === 'event' && !interaction.memberPermissions?.has(PermissionFlagsBits.ManageEvents)) {
+    return '`/event list` · `/event info` — Les événements à venir et leurs tables.'
+  }
+  return `\`/${nom}\` — ${commande.data.description}`
+}
+
 const buildCommandsEmbed = (interaction) => {
   const embed = new EmbedBuilder()
     .setColor(Colors.Blue)
     .setTitle('📜 Liste des commandes')
+    .setFooter({ text: 'Seules les commandes auxquelles vous avez accès sont listées.' })
 
   const allCommands = interaction.client.commands
   const seen = new Set()
@@ -43,19 +63,21 @@ const buildCommandsEmbed = (interaction) => {
       .filter(name => allCommands.has(name))
       .map(name => {
         seen.add(name)
-        return `\`/${name}\` — ${allCommands.get(name).data.description}`
+        return allCommands.get(name)
       })
+      .filter(commande => peutUtiliser(interaction, commande))
+      .map(commande => ligneCommande(interaction, commande))
 
     if (lines.length > 0) {
       embed.addFields({ name: category, value: lines.join('\n') })
     }
   }
 
-  const others = [...allCommands.values()].filter(cmd => !seen.has(cmd.data.name))
+  const others = [...allCommands.values()].filter(cmd => !seen.has(cmd.data.name) && peutUtiliser(interaction, cmd))
   if (others.length > 0) {
     embed.addFields({
       name: 'Autres',
-      value: others.map(cmd => `\`/${cmd.data.name}\` — ${cmd.data.description}`).join('\n')
+      value: others.map(cmd => ligneCommande(interaction, cmd)).join('\n')
     })
   }
 

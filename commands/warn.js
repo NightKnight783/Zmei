@@ -17,15 +17,15 @@ module.exports = {
       option
         .setName('raison')
         .setRequired(false)
+        .setMaxLength(512)
         .setDescription('La raison de l\'avertissement')
     ),
   async execute (interaction) {
     const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
-    const member = server.members.cache.get(interaction.user.id)
 
-    if (!member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+    if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ModerateMembers)) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)
@@ -38,7 +38,7 @@ module.exports = {
     const userToWarn = interaction.options.getUser('membre')
     const reason = interaction.options.getString('raison') || 'Aucune raison donnée'
 
-    if (testStaff(userToWarn, interaction)) { return }
+    if (await testStaff(userToWarn, interaction)) { return }
 
     const mpEmbed = new EmbedBuilder()
       .setColor(Colors.Red)
@@ -62,7 +62,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor(Colors.Grey)
       .setAuthor(author)
-      .setTitle(`Le membre ${userToWarn.displayName} a bien été avertis!`)
+      .setTitle(`Le membre ${userToWarn.displayName} a bien été averti!`)
       .setDescription(`Raison: [${reason}]`)
 
     await interaction.reply({ embeds: [embed] })
@@ -73,7 +73,7 @@ module.exports = {
       const logEmbed = new EmbedBuilder()
         .setColor(Colors.Grey)
         .setAuthor(author)
-        .setTitle(`Le membre ${userToWarn.displayName} a été avertis par ${interaction.user.displayName}`)
+        .setTitle(`Le membre ${userToWarn.displayName} a été averti par ${interaction.user.displayName}`)
         .setDescription(`Raison: [${reason}]`)
 
       await channel.send({ embeds: [logEmbed] })

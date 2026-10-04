@@ -20,8 +20,8 @@ module.exports = {
                 .setDescription('Créer un nouvel événement officiel (sur le site et ici).')
                 .addStringOption(option => option.setName('nom').setDescription('Nom de l\'événement').setRequired(true).setMaxLength(120))
                 .addStringOption(option => option.setName('date').setDescription('Date (JJ/MM/AAAA)').setRequired(true))
-                .addStringOption(option => option.setName('heure').setDescription('Heure de début (HH:MM)').setRequired(true))
-                .addStringOption(option => option.setName('fin').setDescription('Heure de fin (HH:MM), le lendemain si elle est avant le début (défaut : 2 h après le début)').setRequired(false))
+                .addStringOption(option => option.setName('heure_debut').setDescription('Heure de début (HH:MM)').setRequired(true))
+                .addStringOption(option => option.setName('heure_fin').setDescription('Heure de fin (HH:MM), le lendemain si elle est avant le début (défaut : 2 h après le début)').setRequired(false))
                 .addStringOption(option => option.setName('type').setDescription('Type d\'événement (défaut : autre événement de jeu de rôle)').setRequired(false).setAutocomplete(true))
                 .addStringOption(option => option.setName('description').setDescription('Description de l\'événement').setRequired(false))
                 .addStringOption(option => option.setName('lieu').setDescription('Lieu ou salon vocal').setRequired(false).setMaxLength(100))
@@ -55,16 +55,19 @@ module.exports = {
     async creerViaLeSite(interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
-            const debut = synchro.lireDateHeure(interaction.options.getString('date'), interaction.options.getString('heure'));
+            const debut = synchro.lireDateHeure(interaction.options.getString('date'), interaction.options.getString('heure_debut'));
             if (!debut) {
                 return interaction.editReply({ content: '❌ Date ou heure invalide. Utilisez JJ/MM/AAAA et HH:MM (par exemple 09/10/2026 et 20:00).' });
             }
             if (debut <= synchro.maintenantParis()) {
                 return interaction.editReply({ content: '❌ La date et l\'heure de l\'événement doivent être dans le futur (heure de Paris).' });
             }
+            if (!synchro.dansLHorizon(debut)) {
+                return interaction.editReply({ content: '❌ Discord n\'accepte pas d\'événement à plus de cinq ans : choisissez une date plus proche.' });
+            }
 
             let fin = synchro.ajouterMinutes(debut, DUREE_PAR_DEFAUT_MIN);
-            const heureFin = interaction.options.getString('fin');
+            const heureFin = interaction.options.getString('heure_fin');
             if (heureFin) {
                 // L'heure de fin est celle du jour du début ; avant (ou égale à) le début : le lendemain (nocturne)
                 const finLue = synchro.lireDateHeure(interaction.options.getString('date'), heureFin);
@@ -172,7 +175,7 @@ module.exports = {
 
         const name = interaction.options.getString('nom');
         const dateStr = interaction.options.getString('date');
-        const timeStr = interaction.options.getString('heure');
+        const timeStr = interaction.options.getString('heure_debut');
         const description = interaction.options.getString('description') || '';
         const location = interaction.options.getString('lieu') || 'À définir';
         const image = interaction.options.getAttachment('image');
@@ -196,6 +199,9 @@ module.exports = {
         // Vérifier que la date est dans le futur
         if (scheduledStartTime.getTime() <= Date.now()) {
             return interaction.reply({ content: '❌ La date et l\'heure de l\'événement doivent être dans le futur.', ephemeral: true });
+        }
+        if (scheduledStartTime.getTime() > Date.now() + 4.9 * 365.25 * 24 * 3_600_000) {
+            return interaction.reply({ content: '❌ Discord n\'accepte pas d\'événement à plus de cinq ans : choisissez une date plus proche.', ephemeral: true });
         }
 
         // Fin prévue par défaut : 2 heures plus tard (Discord exige souvent une date de fin pour les événements externes)

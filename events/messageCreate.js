@@ -10,7 +10,8 @@ module.exports = {
   name: Events.MessageCreate,
   once: false,
   async execute (message) {
-    if (message.author.bot) return
+    // Les messages privés ne rapportent pas d'xp et n'ont pas de serveur où annoncer un niveau
+    if (message.author.bot || !message.guild) return
 
     if (message.attachments.size > 0) {
       // Volontairement non attendu : ne doit pas ralentir le traitement du message.
@@ -30,8 +31,8 @@ module.exports = {
         }
 
         if (!value) {
-          // Create user in Database if not exist
-          db.run('INSERT into data (userId, userName, xpCooldown) values (?, ?, ?)', [message.author.id, message.author.displayName, Date.now()])
+          // Create user in Database if not exist (« OR IGNORE » : deux messages simultanés d'un nouveau membre ne créent qu'une ligne)
+          db.run('INSERT OR IGNORE INTO data (userId, userName, xpCooldown) values (?, ?, ?)', [message.author.id, message.author.displayName, Date.now()])
         } else {
           // Vérification du cooldown (15 secondes entre chaque gain d'XP)
           if (Date.now() - (new Date(value.xpCooldown)).getTime() < cooldown) return

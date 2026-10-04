@@ -1,6 +1,7 @@
 const { EmbedBuilder, Colors, Events, AttachmentBuilder } = require('discord.js')
 const { getGuildConfig } = require('../utils/constants.js')
 const { getCachedAttachments } = require('../utils/attachmentCache')
+const { couper } = require('../utils/utils.js')
 
 module.exports = {
   name: Events.MessageDelete,
@@ -8,6 +9,7 @@ module.exports = {
   async execute (message) {
     if (message.partial) return
     if (message.author?.bot) return
+    if (!message.guild) return // message privé : pas de serveur, pas de salon de logs
 
     const { logChannel } = getGuildConfig(message.guild.id)
     const channel = message.guild.channels.cache.get(logChannel)
@@ -22,7 +24,8 @@ module.exports = {
       })
       .setDescription(`Dans le salon ${message.channel}`)
       .addFields(
-        { name: 'Message :', value: message.content || '*Vide ou média*' }
+        // Un champ d'embed ne dépasse pas 1024 caractères, un message peut en avoir bien plus : sans cela le log ne serait pas écrit du tout
+        { name: 'Message :', value: couper(message.content || '*Vide ou média*', 1024) }
       )
       .setTimestamp()
       .setFooter({ text: `ID du Message : ${message.id}` })

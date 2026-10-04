@@ -19,19 +19,20 @@ module.exports = {
       option
         .setName('raison')
         .setRequired(false)
+        .setMaxLength(512) // limite de Discord pour la raison inscrite au journal du serveur
         .setDescription('La raison du mute')
     )
     .addIntegerOption(option =>
       option
         .setName('duree')
         .setRequired(false)
-        .setDescription('La durée du mute')
+        .setDescription('La durée du mute, dans l\'unité choisie (par défaut : 1)')
     )
     .addStringOption(option =>
       option
-        .setName('temps')
+        .setName('unite')
         .setRequired(false)
-        .setDescription('L\'unitée de temps du mute')
+        .setDescription('L\'unité de la durée du mute (par défaut : minutes)')
         .addChoices(
           { name: 'Minutes', value: 'minute' },
           { name: 'Heures', value: 'heure' },
@@ -42,9 +43,8 @@ module.exports = {
     const author = getEmbedAuthor(interaction.user)
 
     const server = interaction.guild
-    const member = server.members.cache.get(interaction.user.id)
 
-    if (!member.permissions.has(PermissionsBitField.Flags.MuteMembers)) {
+    if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.MuteMembers)) {
       const embed = new EmbedBuilder()
         .setColor(Colors.Red)
         .setAuthor(author)
@@ -58,9 +58,20 @@ module.exports = {
     const reason = interaction.options.getString('raison') || 'Aucune raison donnée'
 
     const time = interaction.options.getInteger('duree') ?? 1
-    let unite = interaction.options.getString('temps') || 'minute'
+    let unite = interaction.options.getString('unite') || 'minute'
 
-    if (testStaff(userToMute, interaction)) { return }
+    const memberToMute = await server.members.fetch(userToMute.id).catch(() => null)
+    if (!memberToMute) {
+      const embed = new EmbedBuilder()
+        .setColor(Colors.Red)
+        .setAuthor(author)
+        .setTitle(`Le membre ${userToMute.displayName} n'est plus sur le serveur.`)
+
+      await interaction.reply({ embeds: [embed], ephemeral: true })
+      return
+    }
+
+    if (await testStaff(userToMute, interaction)) { return }
 
     if (time < 1) {
       const embed = new EmbedBuilder()
@@ -85,21 +96,24 @@ module.exports = {
       return
     }
 
-    const memberToMute = server.members.cache.get(userToMute.id)
-
     const mpEmbed = new EmbedBuilder()
       .setColor(Colors.Red)
       .setAuthor(author)
       .setTitle(`Vous avez été mute du serveur ${server.name} pendant \`${time} ${unite}\``)
       .setDescription(`Raison: [${reason}]`)
 
-    try {
-      await memberToMute.send({ embeds: [mpEmbed] })
-    } catch (error) {
-      // L'utilisateur a ses MPs fermés, on ignore
-    }
+    // Si les MPs sont fermés, on ignore
+    const mp = await memberToMute.send({ embeds: [mpEmbed] }).catch(() => null)
 
-    await memberToMute.timeout(timeStamp, reason)
+    try {
+      await memberToMute.timeout(timeStamp, reason)
+    } catch (error) {
+      // Rôle du membre au-dessus de celui du bot, administrateur (Discord n'en met pas en sourdine), permission manquante… : on retire le message qui annonçait le mute
+      await mp?.delete().catch(() => {})
+      console.error('Erreur /mute', error)
+      await interaction.reply({ content: `❌ Je n'ai pas pu mettre ${userToMute.displayName} en sourdine. Mon rôle est-il bien au-dessus du sien, n'est-il pas administrateur, et ai-je la permission « Exclure temporairement des membres » ?`, ephemeral: true })
+      return
+    }
 
     if (time > 1) unite += 's'
 
