@@ -20,7 +20,7 @@ module.exports = {
         console.error(error)
       }
     } else if (interaction.isAutocomplete()) {
-      // Saisie semi-automatique (listes de choix des commandes /antre et /forum)
+      // Saisie semi-automatique (listes de choix des commandes /antre et /event)
       const command = interaction.client.commands.get(interaction.commandName)
       if (!command || typeof command.autocomplete !== 'function') return
       try {

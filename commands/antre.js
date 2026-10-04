@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, Colors, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js')
 const antre = require('../utils/antre.js')
 // La liste des événements à venir (gardée une minute, elle sert aussi à la saisie semi-automatique) et leur affichage sont partagés avec /event
-const { COULEUR, evenementsAVenir, nomEvenement, nomTable, embedListe } = require('../utils/antre-affichage.js')
+const { COULEUR, evenementsAVenir, embedListe } = require('../utils/antre-affichage.js')
 
 const EPHEMERE = MessageFlags.Ephemeral
 
@@ -20,22 +20,6 @@ module.exports = {
         .setName('evenements')
         .setDescription('Les prochains événements, avec leurs tables.')
         .addBooleanOption((o) => o.setName('public').setDescription('Afficher pour tout le salon (par défaut, vous seul(e) le voyez).'))
-    )
-    .addSubcommand((s) =>
-      s
-        .setName('interet')
-        .setDescription("Dire quelle table vous intéresse (ce n'est pas une réservation).")
-        .addStringOption((o) => o.setName('evenement').setDescription("L'événement").setRequired(true).setAutocomplete(true))
-        .addStringOption((o) => o.setName('table').setDescription('La table (sinon, vous venez sans choisir de table)').setAutocomplete(true))
-        .addStringOption((o) => o.setName('mot').setDescription('Un petit mot pour le MJ (300 caractères, sans lien)').setMaxLength(300))
-        .addBooleanOption((o) => o.setName('nouveau').setDescription("C'est votre première partie avec l'ANTRE"))
-    )
-    .addSubcommand((s) =>
-      s
-        .setName('retirer')
-        .setDescription("Se retirer d'un événement ou d'une table (un imprévu !).")
-        .addStringOption((o) => o.setName('evenement').setDescription("L'événement").setRequired(true).setAutocomplete(true))
-        .addBooleanOption((o) => o.setName('garder_evenement').setDescription("Rester inscrit(e) à l'événement, en quittant seulement la table."))
     )
     .addSubcommand((s) =>
       s
@@ -124,7 +108,7 @@ module.exports = {
         discordAvatar: interaction.user.avatar ?? null
       })
       await interaction.editReply({
-        content: `✅ Votre compte Discord est lié au compte **${r.pseudo}** du site.\nVous pouvez maintenant utiliser \`/forum\` et \`/antre\`, et recevoir vos notifications ici si vous les activez sur le site (**Mon compte → Notifications**).`,
+        content: `✅ Votre compte Discord est lié au compte **${r.pseudo}** du site.\nVous pouvez maintenant utiliser \`/antre\` et recevoir vos notifications ici si vous les activez sur le site (**Mon compte → Notifications**).`,
         allowedMentions: { parse: [] }
       })
     } catch (erreur) {
@@ -162,43 +146,6 @@ module.exports = {
     return { embeds: [embedListe(liste)] }
   },
 
-  async sous_interet (interaction) {
-    const evenementId = lireId(interaction.options.getString('evenement'))
-    if (!evenementId) return { content: '❌ Choisissez un événement dans la liste proposée.' }
-    const valeurTable = interaction.options.getString('table')
-    const tableId = valeurTable ? lireId(valeurTable) : null
-    if (valeurTable && !tableId) return { content: '❌ Choisissez une table dans la liste proposée (ou laissez ce champ vide).' }
-
-    await antre.put(
-      `/evenements/${evenementId}/inscription`,
-      { tableId, commentaire: interaction.options.getString('mot') ?? '', nouveau: interaction.options.getBoolean('nouveau') === true },
-      { discordId: interaction.user.id }
-    )
-    const evenement = (await evenementsAVenir()).find((e) => e.id === evenementId)
-    const table = evenement?.tables.find((t) => t.id === tableId)
-    return {
-      content:
-        `✅ C'est noté pour **${evenement ? evenement.titre : `l'événement ${evenementId}`}**` +
-        (table ? `, table **${table.titre || table.jeu}**` : ', sans table choisie') +
-        ".\nCe n'est pas une réservation : la répartition définitive se fait sur place. Un imprévu ? `/antre retirer`."
-    }
-  },
-
-  async sous_retirer (interaction) {
-    const evenementId = lireId(interaction.options.getString('evenement'))
-    if (!evenementId) return { content: '❌ Choisissez un événement dans la liste proposée.' }
-    const options = { discordId: interaction.user.id }
-    if (interaction.options.getBoolean('garder_evenement')) {
-      const { evenement } = await antre.get(`/evenements/${evenementId}`, options)
-      const tableId = evenement.monInscription?.tableId
-      if (!tableId) return { content: "ℹ️ Vous n'êtes inscrit(e) à aucune table de cet événement." }
-      await antre.supprimer(`/tables/${tableId}/inscription`, options)
-      return { content: `✅ Vous ne participez plus à la table de **${evenement.titre}**, mais restez inscrit(e) à l'événement.` }
-    }
-    await antre.supprimer(`/evenements/${evenementId}/inscription`, options)
-    return { content: "✅ Vous êtes retiré(e) de l'événement. Le MJ de votre table en est prévenu. Vous pourrez vous réinscrire quand vous voulez." }
-  },
-
   // --- Campagnes et notifications ----------------------------------------------------------------------------------------
 
   async sous_campagnes (interaction) {
@@ -229,29 +176,5 @@ module.exports = {
           .setFooter({ text: `${r.nonLues} non lue${r.nonLues > 1 ? 's' : ''}${interaction.options.getBoolean('tout_lire') ? ' (maintenant marquées comme lues)' : ''}` })
       ]
     }
-  },
-
-  // --- Saisie semi-automatique ------------------------------------------------------------------------------------------
-
-  async autocomplete (interaction) {
-    const focus = interaction.options.getFocused(true)
-    const saisie = String(focus.value).toLowerCase()
-    let choix = []
-    try {
-      const evenements = await evenementsAVenir()
-      if (focus.name === 'evenement') {
-        const sousCommande = interaction.options.getSubcommand()
-        choix = evenements
-          .filter((e) => sousCommande !== 'interet' || e.tables.length > 0)
-          .filter((e) => nomEvenement(e).toLowerCase().includes(saisie))
-          .map((e) => ({ name: nomEvenement(e), value: String(e.id) }))
-      } else if (focus.name === 'table') {
-        const evenement = evenements.find((e) => e.id === lireId(interaction.options.getString('evenement')))
-        choix = (evenement?.tables ?? []).filter((t) => nomTable(t).toLowerCase().includes(saisie)).map((t) => ({ name: nomTable(t), value: String(t.id) }))
-      }
-    } catch {
-      // Site injoignable : la liste est simplement vide
-    }
-    await interaction.respond(choix.slice(0, 25)).catch(() => {})
   }
 }
