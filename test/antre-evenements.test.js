@@ -488,6 +488,20 @@ describe('commandes /event', () => {
 		}
 	});
 
+	it('un événement à tables sans table affiche « 0 table · 0 intéressé » ; « venez simplement » reste pour les événements sans tables', async () => {
+		try {
+			site.creer({ titre: 'Initiation vide', categorie: 'jdr' });
+			site.creer({ titre: 'Séance d\'échecs', categorie: 'echecs', type: 'echecs' });
+			const liste = fausseInteraction({ sous: 'list', guild: serveur.guild, client: serveur.client });
+			await commandeEvent.execute(liste);
+			const champs = liste.reponses.at(-1).embeds[0].toJSON().fields;
+			assert.ok(champs.find((f) => f.name.includes('Initiation vide')).value.includes('0 table · 0 intéressé'));
+			assert.ok(champs.find((f) => f.name.includes('échecs')).value.includes('Pas de table : venez simplement.'));
+		} finally {
+			restaurer();
+		}
+	});
+
 	it('saisie semi-automatique : événements à venir et types', async () => {
 		try {
 			site.creer({ titre: 'Nocturne de rentrée' });

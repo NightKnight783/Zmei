@@ -55,6 +55,8 @@ const nomEvenement = (e) => antre.couper(`${antre.dateEvenement(e.debut)} — ${
 const nomTable = (t) => antre.couper(`${t.titre || t.jeu}${t.titre ? ` (${t.jeu})` : ''} — ${t.mj}${t.cloturee ? ' · inscriptions closes' : ''}`, 100)
 
 const pluriel = (n, un, plusieurs = `${un}s`) => `${n} ${n > 1 ? plusieurs : un}`
+/** Les catégories d'événements du site qui proposent des tables (les autres : « venez simplement »). */
+const CATEGORIES_A_TABLES = new Set(['jdr', 'jds'])
 
 // --- Fiches ---------------------------------------------------------------------------------------------------------------------
 
@@ -69,7 +71,9 @@ function plage (debut, fin) {
 /** Une ligne sur ce que l'événement propose : tables et intéressés, ou « venez simplement ». */
 function resumeTables (e) {
   const tables = e.tables ?? []
-  if (!tables.length) return 'Pas de table : venez simplement.'
+  // Un événement qui propose des tables (jeux de rôle, jeux de société) sans table pour l'instant affiche « 0 table » : rien qui laisse
+  // croire qu'on ne peut pas encore s'inscrire. « Venez simplement » est réservé aux événements sans tables (échecs, autres associations).
+  if (!tables.length) return CATEGORIES_A_TABLES.has(e.categorie) ? `${pluriel(0, 'table')} · ${pluriel(e.nbInteresses ?? 0, 'intéressé')}` : 'Pas de table : venez simplement.'
   return `${pluriel(tables.length, 'table')} · ${pluriel(e.nbInteresses, 'intéressé')}`
 }
 
