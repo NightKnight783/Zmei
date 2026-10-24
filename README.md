@@ -47,11 +47,11 @@ Dans `config.json` (jamais versionné) :
 | Commande | Rôle |
 | --- | --- |
 | `/antre lier` · `/antre delier` · `/antre moi` | liaison du compte, état |
-| `/antre evenements` | prochains événements et leurs tables |
+| `/antre evenements` | prochains événements, avec leurs tables, ou leurs inscrits et places pour un événement sur inscription, ou « Accès libre » |
 | `/antre campagnes` | campagnes en cours (`inscrites:true` : seulement celles où je suis inscrit(e)) |
 | `/antre notifications` | ses notifications du site |
 | `/event create` | créer un événement : il est créé **sur le site** (au nom du compte lié, qui doit être modérateur ou administrateur du site) puis ici |
-| `/event list` · `/event info` | les événements du site ; `info` : dates, lieu, tables (jeu, MJ) et nombre de joueurs |
+| `/event list` · `/event info` | les événements du site ; `info` : dates, lieu, tables (jeu, MJ) et nombre de joueurs — ou, pour un tournoi sur inscription, les inscrits et les places restantes — ou « accès libre » |
 
 **Ce que le bot fait, et ne fait pas.** Discord sert d'abord à discuter ; le bot n'est pas une seconde interface du site. Il sert à **voir** les événements (avec leurs tables et le nombre de joueurs), à **lister** les campagnes, à **recevoir les notifications** du site en message privé, et à **créer un événement** (modérateurs et administrateurs). Tout le reste se fait sur le site : s'inscrire à une table, écrire sur le forum, **suivre un sujet** (on est alors prévenu de chaque réponse, par la cloche, et par e-mail, message privé Discord ou téléphone selon **Mon compte → Notifications**), rejoindre une campagne.
 

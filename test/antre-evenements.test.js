@@ -606,6 +606,48 @@ describe('commandes /event', () => {
 		}
 	});
 
+	it('la façon de participer : inscrits et places (tournoi), « Accès libre », ou tables ; le rappel sur les tables ne vaut que pour elles', async () => {
+		try {
+			site.creer({ id: 31, titre: 'Tournoi d\'échecs', categorie: 'echecs', type: 'echecs_tournoi', participation: 'inscription', placesMax: 16, nbInteresses: 5, nbInscritsTotal: 5, avecTables: false });
+			site.creer({ id: 32, titre: 'Tournoi complet', categorie: 'echecs', type: 'echecs_tournoi', participation: 'inscription', placesMax: 2, nbInteresses: 2, nbInscritsTotal: 2, avecTables: false });
+			site.creer({ id: 33, titre: 'Soirée sans limite', categorie: 'assos', type: 'autre', participation: 'inscription', placesMax: null, nbInteresses: 1, nbInscritsTotal: 1, avecTables: false });
+			site.creer({ id: 34, titre: 'Séance d\'échecs', categorie: 'echecs', type: 'echecs', participation: 'libre', avecTables: false });
+			const liste = fausseInteraction({ sous: 'list', guild: serveur.guild, client: serveur.client });
+			await commandeEvent.execute(liste);
+			const embedListe = liste.reponses.at(-1).embeds[0].toJSON();
+			const valeur = (nom) => embedListe.fields.find((f) => f.name.includes(nom)).value;
+			assert.match(valeur('Tournoi d\'échecs'), /5 \/ 16 inscrits/);
+			assert.ok(!/complet/.test(valeur('Tournoi d\'échecs')));
+			assert.match(valeur('Tournoi complet'), /2 \/ 2 inscrits · complet/);
+			assert.match(valeur('Soirée sans limite'), /1 inscrit(?!s)/);
+			assert.match(valeur('Séance d\'échecs'), /Accès libre : venez simplement/);
+			assert.equal(embedListe.footer, undefined, 'pas de rappel sur les tables quand aucun événement n\'en a');
+
+			const info = fausseInteraction({ sous: 'info', guild: serveur.guild, client: serveur.client, options: { evenement: '31' } });
+			await commandeEvent.execute(info);
+			const detail = JSON.stringify(info.reponses.at(-1).embeds[0].toJSON());
+			assert.ok(detail.includes('5 / 16 inscrits') && detail.includes('11 places restantes'), detail);
+			assert.ok(!detail.includes('personnes inscrites') && !detail.includes('pas de table'), 'rien sur les tables');
+
+			const complet = fausseInteraction({ sous: 'info', guild: serveur.guild, client: serveur.client, options: { evenement: '32' } });
+			await commandeEvent.execute(complet);
+			assert.ok(JSON.stringify(complet.reponses.at(-1).embeds[0].toJSON()).includes('2 / 2 inscrits · complet'));
+
+			const libre = fausseInteraction({ sous: 'info', guild: serveur.guild, client: serveur.client, options: { evenement: '34' } });
+			await commandeEvent.execute(libre);
+			assert.ok(JSON.stringify(libre.reponses.at(-1).embeds[0].toJSON()).includes("accès libre : pas d'inscription, venez simplement"));
+
+			// Une nocturne en mode « tables » garde le rappel
+			affichage.oublierEvenements()
+			site.creer({ id: 35, titre: 'Nocturne à tables', participation: 'tables', nbTables: 1, nbInteresses: 2, avecTables: true });
+			const avecTables = fausseInteraction({ sous: 'list', guild: serveur.guild, client: serveur.client });
+			await commandeEvent.execute(avecTables);
+			assert.match(avecTables.reponses.at(-1).embeds[0].toJSON().footer.text, /pas une réservation/);
+		} finally {
+			restaurer();
+		}
+	});
+
 	it('un événement de jeu de rôle sans table affiche « 0 table · 0 intéressé » ; un événement qui n\'a pas de tables (échecs…) n\'a aucune ligne de tables', async () => {
 		try {
 			site.creer({ titre: 'Initiation vide', categorie: 'jdr' });

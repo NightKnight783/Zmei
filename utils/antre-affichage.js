@@ -68,9 +68,23 @@ function plage (debut, fin) {
   return `${antre.dateEvenement(debut)} → ${memeJour ? `${Number(h)}h${m}` : antre.dateEvenement(fin)}`
 }
 
-/** Une ligne sur ce que l'événement propose : tables et intéressés. Rien (chaîne vide) pour un événement qui n'a pas de tables par nature. */
+/** « 5 / 16 inscrits » (avec une limite de places) ou « 5 inscrits ». */
+const libelleInscrits = (nb, placesMax) => (placesMax ? `${nb} / ${placesMax} inscrit${nb > 1 ? 's' : ''}` : pluriel(nb, 'inscrit'))
+/** Événement sur inscription dont la limite de places est atteinte. */
+const estComplet = (participation, placesMax, nbInscrits) => participation === 'inscription' && Boolean(placesMax) && nbInscrits >= placesMax
+
+/**
+ * Une ligne sur la façon de participer : « Accès libre » (rien à faire), « 5 / 16 inscrits » (événement sur inscription, avec « complet » quand la
+ * limite est atteinte), ou « 2 tables · 5 intéressés » (on dit quelle table intéresse). Rien (chaîne vide) pour un événement qui n'a pas de tables par
+ * nature. Un site plus ancien, qui n'envoie pas `participation`, garde l'affichage des tables.
+ */
 function resumeTables (e) {
   const tables = e.tables ?? []
+  if (e.participation === 'libre') return 'Accès libre : venez simplement'
+  if (e.participation === 'inscription') {
+    const inscrits = e.nbInteresses ?? 0
+    return [libelleInscrits(inscrits, e.placesMax), estComplet(e.participation, e.placesMax, inscrits) ? 'complet' : '', tables.length ? pluriel(tables.length, 'table') : ''].filter(Boolean).join(' · ')
+  }
   // Un événement qui propose des tables (jeux de rôle, jeux de société) sans table pour l'instant affiche « 0 table · 0 intéressé » : rien qui
   // laisse croire qu'on ne peut pas encore s'inscrire. Les autres (échecs, autres associations) n'ont pas de tables : pas de ligne du tout.
   if (!tables.length) return CATEGORIES_A_TABLES.has(e.categorie) ? `${pluriel(0, 'table')} · ${pluriel(e.nbInteresses ?? 0, 'intéressé')}` : ''
@@ -87,7 +101,10 @@ function embedListe (liste, { titre = '📅 Prochains événements', limite = 8 
     })
   }
   if (liste.length > limite) embed.setDescription(`Et ${pluriel(liste.length - limite, 'autre')} sur le [site](${antre.urlSite('/evenements')}).`)
-  embed.setFooter({ text: "Dire sur le site quelle table vous intéresse n'est pas une réservation : la répartition se fait sur place." })
+  // Le rappel ne vaut que pour les événements où l'on dit quelle table intéresse
+  if (liste.slice(0, limite).some((e) => (e.participation ?? 'tables') === 'tables' && CATEGORIES_A_TABLES.has(e.categorie))) {
+    embed.setFooter({ text: "Dire sur le site quelle table vous intéresse n'est pas une réservation : la répartition se fait sur place." })
+  }
   return embed
 }
 
@@ -121,14 +138,24 @@ function embedEvenement (e, libelles = {}) {
   if (tables.length > 20) embed.addFields({ name: '…', value: `${pluriel(tables.length - 20, 'autre table')} sur le site.` })
   const pasDeTable = e.nbInscritsTotal - tables.reduce((somme, t) => somme + (t.nbInteresses ?? 0), 0)
   const bilan = []
-  if (e.nbInscritsTotal !== undefined) bilan.push(`${pluriel(e.nbInscritsTotal, 'personne inscrite', 'personnes inscrites')}`)
-  if (tables.length && pasDeTable > 0) bilan.push(`dont ${pasDeTable} sans table choisie`)
-  if (!tables.length && !e.avecTables) bilan.push('pas de table : venez simplement')
+  if (e.participation === 'libre') {
+    bilan.push("accès libre : pas d'inscription, venez simplement")
+  } else if (e.participation === 'inscription') {
+    // On s'inscrit à l'événement (pas à une table) : les inscrits et les places restantes
+    const inscrits = e.nbInscritsTotal ?? 0
+    bilan.push(libelleInscrits(inscrits, e.placesMax))
+    if (estComplet(e.participation, e.placesMax, inscrits)) bilan.push('complet')
+    else if (e.placesMax) bilan.push(`${pluriel(e.placesMax - inscrits, 'place restante', 'places restantes')}`)
+  } else {
+    if (e.nbInscritsTotal !== undefined) bilan.push(`${pluriel(e.nbInscritsTotal, 'personne inscrite', 'personnes inscrites')}`)
+    if (tables.length && pasDeTable > 0) bilan.push(`dont ${pasDeTable} sans table choisie`)
+    if (!tables.length && !e.avecTables) bilan.push('pas de table : venez simplement')
+  }
   if (e.heureRepartition) bilan.push(`répartition à ${e.heureRepartition.replace(':', 'h')}`)
   const liens = [`[Page de l'événement](${antre.urlSite(`/evenements/${e.id}`)})`]
   if (e.discussionId) liens.push(`[Discussion du forum](${antre.urlSite(`/forum/sujet/${e.discussionId}`)})`)
   embed.addFields({ name: 'En résumé', value: `${bilan.join(' · ') || '—'}\n${liens.join(' · ')}` })
-  embed.setFooter({ text: "Un intérêt pour une table n'est pas une réservation : la répartition se fait sur place." })
+  if ((e.participation ?? 'tables') === 'tables' && tables.length) embed.setFooter({ text: "Un intérêt pour une table n'est pas une réservation : la répartition se fait sur place." })
   if (e.affiche) embed.setImage(antre.urlSite(e.affiche))
   return embed
 }
